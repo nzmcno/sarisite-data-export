@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Sahibinden CSV/Excel İndirici</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body { 
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      width: 280px;
+      background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+      padding: 0;
+      overflow: hidden;
+    }
+    
+    .container {
+      background: white;
+      margin: 8px;
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 8px 32px rgba(255, 215, 0, 0.3);
+      border: 2px solid rgba(255, 215, 0, 0.2);
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    
+    .logo {
+      font-size: 24px;
+      font-weight: bold;
+      color: #FF6B00;
+      margin-bottom: 5px;
+      text-shadow: 0 2px 4px rgba(255, 107, 0, 0.2);
+    }
+    
+    .subtitle {
+      font-size: 12px;
+      color: #666;
+      font-weight: 500;
+    }
+    
+    .button-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    
+    .download-button {
+      width: 100%;
+      padding: 14px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    .download-button::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+      transition: left 0.5s;
+    }
+    
+    .download-button:hover::before {
+      left: 100%;
+    }
+    
+    #downloadCsvBtn {
+      background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+      color: #333;
+      border: 2px solid #FFD700;
+    }
+    
+    #downloadCsvBtn:hover {
+      background: linear-gradient(135deg, #FFA500 0%, #FF8C00 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(255, 215, 0, 0.4);
+    }
+    
+    #downloadXlsxBtn {
+      background: linear-gradient(135deg, #FF6B00 0%, #FF4500 100%);
+      color: white;
+      border: 2px solid #FF6B00;
+    }
+    
+    #downloadXlsxBtn:hover {
+      background: linear-gradient(135deg, #FF4500 0%, #DC143C 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(255, 107, 0, 0.4);
+    }
+    
+    .button-icon {
+      margin-right: 8px;
+      font-size: 16px;
+    }
+    
+    .format-info {
+      font-size: 10px;
+      opacity: 0.8;
+      margin-top: 4px;
+      text-align: center;
+      font-weight: 400;
+    }
+    
+    .download-button:active {
+      transform: translateY(0);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    }
+    
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #FFD700, transparent);
+      margin: 8px 0;
+    }
+    
+    .footer {
+      text-align: center;
+      margin-top: 16px;
+      font-size: 10px;
+      color: #999;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .container {
+      animation: fadeIn 0.3s ease-out;
+    }
+    
+    .download-button {
+      animation: fadeIn 0.4s ease-out;
+    }
+    
+    #downloadXlsxBtn {
+      animation-delay: 0.1s;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">📊 Sahibinden</div>
+      <div class="subtitle">İlan Veri İndirici</div>
+    </div>
+    
+    <div class="button-container">
+      <button id="downloadCsvBtn" class="download-button">
+        <span class="button-icon">📄</span>
+        CSV İndir
+        <div class="format-info">Hafif metin formatı</div>
+      </button>
+      
+      <!-- <div class="divider"></div>
+      
+      <button id="downloadXlsxBtn" class="download-button">
+        <span class="button-icon">📊</span>
+        Excel İndir
+        <div class="format-info">Gelişmiş Excel dosyası</div>
+      </button> -->
+    </div>
+    
+    <div class="footer">
+      Sahibinden.com ile uyumlu
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
