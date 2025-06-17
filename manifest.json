@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Sahibinden İlan Veri İndirici - CSV Excel Dışa Aktarma",
   "version": "1.0.0",
-  "description": "Sahibinden ilanlarını CSV ve Excel formatında indirin. Araç, emlak, elektronik verilerinizi kolayca dışa aktarın. Türkçe karakter desteği ile.",
+  "description": "Sahibinden ilanlarını CSV ve Excel formatında indirin. Araç, emlak, elektronik verilerinizi kolayca dışa aktarın.",
   "permissions": ["activeTab", "scripting", "downloads"],
   "action": {
     "default_popup": "popup.html",
