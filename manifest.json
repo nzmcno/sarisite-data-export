@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "description": "Sahibinden ilanlarını CSV ve Excel formatında indirin. Araç, emlak, elektronik verilerinizi kolayca dışa aktarın.",
   "permissions": ["activeTab", "scripting", "downloads"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -17,5 +20,5 @@
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
-  "host_permissions": ["*://*.sahibinden.com/*"]
+  "host_permissions": ["*://*.sahibinden.com/*", "*://*/*"]
 }

@@ -12,10 +12,11 @@
     
     body { 
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      width: 280px;
+      width: 400px;
+      min-height: 500px;
       background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
       padding: 0;
-      overflow: hidden;
+      overflow-x: hidden;
     }
     
     .container {
@@ -25,6 +26,7 @@
       padding: 20px;
       box-shadow: 0 8px 32px rgba(255, 215, 0, 0.3);
       border: 2px solid rgba(255, 215, 0, 0.2);
+      min-height: 480px;
     }
     
     .header {
@@ -154,6 +156,267 @@
     #downloadXlsxBtn {
       animation-delay: 0.1s;
     }
+    
+    /* Tab Navigation Styles */
+    .tab-navigation {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #f0f0f0;
+      padding-bottom: 8px;
+    }
+    
+    .tab-button {
+      flex: 1;
+      padding: 10px 12px;
+      background: transparent;
+      border: none;
+      border-bottom: 3px solid transparent;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: #666;
+      transition: all 0.3s ease;
+      border-radius: 6px 6px 0 0;
+    }
+    
+    .tab-button:hover {
+      background: rgba(255, 215, 0, 0.1);
+      color: #FFA500;
+    }
+    
+    .tab-button.active {
+      color: #FF6B00;
+      border-bottom-color: #FF6B00;
+      background: rgba(255, 215, 0, 0.15);
+    }
+    
+    .tab-content {
+      display: none;
+    }
+    
+    .tab-content.active {
+      display: block;
+      animation: fadeIn 0.3s ease-out;
+    }
+    
+    /* Image Tab Styles */
+    .scan-button {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+    }
+    
+    .scan-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
+    }
+    
+    .scan-button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .loading-spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s linear infinite;
+      margin-right: 8px;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .image-stats {
+      background: rgba(255, 215, 0, 0.1);
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      color: #333;
+      font-weight: 500;
+    }
+    
+    .stats-text {
+      flex: 1;
+    }
+    
+    .download-all-btn {
+      padding: 8px 16px;
+      background: linear-gradient(135deg, #FF6B00 0%, #FF4500 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+      margin-left: 12px;
+    }
+    
+    .download-all-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 4px 12px rgba(255, 107, 0, 0.4);
+    }
+    
+    .download-all-btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .image-groups-container {
+      max-height: 320px;
+      overflow-y: auto;
+      padding-right: 8px;
+    }
+    
+    .image-groups-container::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    .image-groups-container::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 10px;
+    }
+    
+    .image-groups-container::-webkit-scrollbar-thumb {
+      background: #FFD700;
+      border-radius: 10px;
+    }
+    
+    .image-group {
+      background: rgba(255, 215, 0, 0.05);
+      border: 2px solid rgba(255, 215, 0, 0.3);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+      transition: all 0.3s ease;
+    }
+    
+    .image-group:hover {
+      border-color: #FFD700;
+      box-shadow: 0 4px 12px rgba(255, 215, 0, 0.2);
+    }
+    
+    .group-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    
+    .group-info {
+      font-size: 12px;
+      color: #666;
+    }
+    
+    .group-title {
+      font-weight: 600;
+      color: #333;
+    }
+    
+    .download-group-btn {
+      padding: 6px 12px;
+      background: linear-gradient(135deg, #FF6B00 0%, #FF4500 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    .download-group-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 4px 12px rgba(255, 107, 0, 0.3);
+    }
+    
+    .download-group-btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    
+    .image-item {
+      position: relative;
+      aspect-ratio: 1;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 2px solid #f0f0f0;
+      transition: all 0.2s ease;
+    }
+    
+    .image-item:hover {
+      border-color: #FFD700;
+      transform: scale(1.05);
+    }
+    
+    .image-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    
+    .download-single-btn {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      background: rgba(255, 107, 0, 0.9);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    
+    .image-item:hover .download-single-btn {
+      opacity: 1;
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #999;
+    }
+    
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
   </style>
 </head>
 <body>
@@ -163,20 +426,47 @@
       <div class="subtitle">İlan Veri İndirici</div>
     </div>
     
-    <div class="button-container">
-      <button id="downloadCsvBtn" class="download-button">
-        <span class="button-icon">📄</span>
-        CSV İndir
-        <div class="format-info">Hafif metin formatı</div>
+    <!-- Tab Navigation -->
+    <div class="tab-navigation">
+      <button class="tab-button active" data-tab="csv">
+        📄 CSV/Excel
+      </button>
+      <button class="tab-button" data-tab="images">
+        🖼️ Görseller
+      </button>
+    </div>
+    
+    <!-- CSV/Excel Tab -->
+    <div id="csv-tab" class="tab-content active">
+      <div class="button-container">
+        <button id="downloadCsvBtn" class="download-button">
+          <span class="button-icon">📄</span>
+          CSV İndir
+          <div class="format-info">Hafif metin formatı</div>
+        </button>
+      </div>
+    </div>
+    
+    <!-- Images Tab -->
+    <div id="images-tab" class="tab-content">
+      <button id="scanImagesBtn" class="scan-button">
+        🔍 Sayfayı Tara
       </button>
       
-      <!-- <div class="divider"></div>
+      <div id="imageResults" style="display: none;">
+        <div class="image-stats">
+          <div class="stats-text" id="imageStats"></div>
+          <button id="downloadAllBtn" class="download-all-btn">
+            ⬇️ Hepsini İndir
+          </button>
+        </div>
+        <div class="image-groups-container" id="imageGroupsContainer"></div>
+      </div>
       
-      <button id="downloadXlsxBtn" class="download-button">
-        <span class="button-icon">📊</span>
-        Excel İndir
-        <div class="format-info">Gelişmiş Excel dosyası</div>
-      </button> -->
+      <div id="emptyState" class="empty-state">
+        <div class="empty-state-icon">🖼️</div>
+        <p>Görselleri taramak için "Sayfayı Tara" butonuna tıklayın</p>
+      </div>
     </div>
     
     <div class="footer">

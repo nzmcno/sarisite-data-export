@@ -1,6 +1,6 @@
-# Sahibinden İlan Veri İndirici - CSV Excel Dışa Aktarma
+# Sahibinden İlan Veri İndirici - CSV Excel ve Görsel İndirme
 
-🚀 **Profesyonel Chrome Uzantısı** - Sahibinden.com ilanlarını CSV ve Excel formatında indirin. Türkçe karakter desteği ile tam uyumlu.
+🚀 **Profesyonel Chrome Uzantısı** - Sahibinden.com ilanlarını CSV ve Excel formatında indirin. Görselleri toplu olarak kaydedin. Türkçe karakter desteği ile tam uyumlu.
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Uzantı-4285F4?style=for-the-badge&logo=google-chrome&logoColor=white)](https://chrome.google.com/webstore)
 [![Version](https://img.shields.io/badge/Sürüm-1.0.0-success?style=for-the-badge)](https://github.com/your-username/sahibinden-data-exporter)
@@ -13,17 +13,29 @@
 - **Data Backup**: Save your own listings for records
 - **Academic Research**: Gather data for economic studies
 - **Real Estate Analysis**: Track property market trends
+- **Image Collection**: Toplu görsel indirme ve arşivleme
 
 ## 🚀 Features
+
+### 📊 Veri İndirme
 
 - **Dual Format Export**: Download data in both CSV and Excel (XLSX) formats
 - **Dynamic Column Detection**: Automatically adapts to different Sahibinden categories
 - **Turkish Character Support**: Full UTF-8 encoding with BOM for proper display
 - **Smart Data Extraction**: Handles images, links, prices, dates, and locations
-- **Modern UI**: Clean, professional interface matching Sahibinden's brand colors
 - **Location Parsing**: Intelligently combines city/district information
 - **Image URL Extraction**: Captures classified ad images
 - **Direct Links**: Includes clickable links to original ads
+
+### 🖼️ Görsel İndirme (YENİ!)
+
+- **Otomatik Tarama**: Sayfadaki tüm görselleri otomatik olarak bulur
+- **Background Image Desteği**: CSS background-image'ları da tarar
+- **Akıllı Gruplama**: Görselleri boyut ve türe göre gruplar
+- **Toplu İndirme**: Tüm grup veya tekli görselleri indirebilme
+- **Batch Processing**: 5'er 5'er indirme ile tarayıcı performansını koruma
+- **Format Desteği**: JPG, PNG, GIF, WEBP, SVG, AVIF
+- **Organized Downloads**: Otomatik klasör oluşturma ve düzenli kaydetme
 
 ## 📋 Supported Data Fields
 
@@ -54,19 +66,44 @@ _Coming soon..._
 
 ## 🎯 Usage
 
+### 📊 CSV Veri İndirme
+
 1. **Navigate to Sahibinden.com**
    - Go to any search results page (cars, real estate, electronics, etc.)
 2. **Open the Extension**
    - Click the extension icon in your Chrome toolbar
-3. **Choose Export Format**
-
+3. **CSV/Excel Tab**
+   - Varsayılan olarak CSV/Excel tab'ı açıktır
    - **CSV Export**: Click "CSV İndir" for text-based format
-   - **Excel Export**: Click "Excel İndir" for native Excel format
 
 4. **File Download**
    - Files are automatically downloaded to your default download folder
    - CSV files: `sahibinden_ilanlar.csv`
-   - Excel files: `sahibinden_ilanlar.xlsx`
+
+### 🖼️ Görsel İndirme (YENİ!)
+
+1. **Görseller Tab'ına Geçin**
+   - Extension'ı açın ve "🖼️ Görseller" tab'ına tıklayın
+
+2. **Sayfayı Tarayın**
+   - "🔍 Sayfayı Tara" butonuna tıklayın
+   - Extension otomatik olarak:
+     - Tüm `<img>` elementlerini bulur
+     - CSS background-image'ları tarar
+     - Görselleri boyut ve türe göre gruplar
+
+3. **Sonuçları İnceleyin**
+   - Bulunan görseller boyut gruplarına ayrılır
+   - Her grup için:
+     - Boyut bilgisi (örn: 300×200)
+     - Görsel sayısı
+     - Dosya formatı (JPG, PNG, vb.)
+     - İlk 8 görsel önizlemesi
+
+4. **İndirme Seçenekleri**
+   - **Grup İndirme**: Her grubun sağ üstündeki "⬇️ İndir" butonuna tıklayın
+   - **Tekli İndirme**: Görsel üzerine gelip küçük indirme butonuna tıklayın
+   - Görseller otomatik olarak klasörlere düzenlenir: `sitename_images_timestamp/`
 
 ## 📊 Export Formats
 
@@ -77,12 +114,13 @@ _Coming soon..._
 - **Quote Protection**: All fields wrapped in quotes
 - **Compatibility**: Opens correctly in Turkish Excel versions
 
-### Excel Format (XLSX)
+### Image Download Format
 
-- **Native Format**: True Excel workbook
-- **Column Widths**: Automatically optimized
-- **Data Types**: Numbers preserved as numeric values
-- **Styling**: Clean, professional formatting
+- **Folder Structure**: `hostname_images_timestamp/timestamp_index.extension`
+- **Batch Size**: 5 images per batch
+- **Delay**: 300ms between batches (browser-friendly)
+- **Supported Formats**: JPG, JPEG, PNG, GIF, WEBP, SVG, AVIF
+- **Duplicate Prevention**: Same image URL downloaded only once per scan
 
 ## 🌍 Multi-Category Support
 
