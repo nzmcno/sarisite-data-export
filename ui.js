@@ -11,6 +11,8 @@ const ICON_PATHS = {
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
   refresh: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/>',
   open: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  car: '<path d="M19 17h2a1 1 0 0 0 1-1v-3a2 2 0 0 0-1.6-2l-2.4-.5-2.2-3.5a2 2 0 0 0-1.7-1H9a2 2 0 0 0-1.7 1L5 10.5 3.3 11A2 2 0 0 0 2 13v3a1 1 0 0 0 1 1h2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M9 17h6"/>',
+  phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.9.6 2.8.7a2 2 0 0 1 1.7 2z"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>',
   chart: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M8 17v-5"/><path d="M13 17V7"/><path d="M18 17v-9"/>',
   layers: '<path d="m12 2 9 5-9 5-9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/>',
@@ -218,13 +220,11 @@ function listingInsights(record, features, context) {
   if (features.computedFields) {
     computedFields(record, context || {}).forEach(([label, value]) => add(label, formatNumber(value, 1)));
   }
-  if (features.descriptionParsing) {
-    const parsed = parseDescription(record.description);
-    add('Açıklamada tramer', typeof parsed.tramer === 'number' ? `${formatNumber(parsed.tramer)} TL` : parsed.tramer);
-    add('Açıklamada cephe', parsed.facade);
-    add('Açıklamada geçenler', parsed.keywords);
-    add('Açıklamada ekstralar', parsed.extras);
-  }
+  const parsed = parseDescription(record.description);
+  add('Açıklamada tramer', typeof parsed.tramer === 'number' ? `${formatNumber(parsed.tramer)} TL` : parsed.tramer);
+  add('Açıklamada cephe', parsed.facade);
+  add('Açıklamada geçenler', parsed.keywords);
+  add('Açıklamada ekstralar', parsed.extras);
   if (features.extraData) {
     add('Mağaza', record.storeName);
     add('Yetki belge no', record.license);
@@ -242,6 +242,233 @@ function renderFacts(facts) {
     list.append(el('dt', { text: label }), el('dd', { text: String(value) }));
   });
   return list;
+}
+
+/**
+ * ============================================================================
+ * VEHICLE REPORT
+ * ============================================================================
+ */
+async function loadVehicleTerms() {
+  const { vehicleTerms = [] } = await chrome.storage.local.get('vehicleTerms');
+  return vehicleTerms;
+}
+
+/** Top view with the front at the top. Each part carries a letter, so state never rests on color alone. */
+const CAR_DIAGRAM_PARTS = [
+  ['front-bumper', 44, 4, 112, 22],
+  ['front-hood', 54, 30, 92, 62],
+  ['front-left-mudguard', 20, 30, 30, 62],
+  ['front-right-mudguard', 150, 30, 30, 62],
+  ['front-left-door', 20, 96, 30, 62],
+  ['front-right-door', 150, 96, 30, 62],
+  ['roof', 54, 118, 92, 72],
+  ['rear-left-door', 20, 162, 30, 62],
+  ['rear-right-door', 150, 162, 30, 62],
+  ['rear-left-mudguard', 20, 228, 30, 62],
+  ['rear-right-mudguard', 150, 228, 30, 62],
+  ['rear-hood', 54, 228, 92, 62],
+  ['rear-bumper', 44, 294, 112, 22]
+];
+
+function renderDamageDiagram(damage) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 200 320');
+  svg.setAttribute('class', 'car-diagram');
+  svg.setAttribute('role', 'img');
+  const counts = damageCounts(damage);
+  svg.setAttribute('aria-label', `Araç şeması: ${counts.changed} değişen, ${counts.painted} boyalı, ${counts.localPainted} lokal boyalı parça`);
+  const stateOf = (part) => {
+    if (damage.changed.includes(part)) return ['changed', 'D'];
+    if (damage.painted.includes(part)) return ['painted', 'B'];
+    if (damage.localPainted.includes(part)) return ['local', 'L'];
+    return ['original', ''];
+  };
+  CAR_DIAGRAM_PARTS.forEach(([part, x, y, width, height]) => {
+    const [state, letter] = stateOf(part);
+    const group = document.createElementNS(ns, 'g');
+    group.setAttribute('class', `car-part car-part-${state}`);
+    const title = document.createElementNS(ns, 'title');
+    title.textContent = CAR_PART_LABELS[part];
+    const rect = document.createElementNS(ns, 'rect');
+    Object.entries({ x, y, width, height, rx: 6 }).forEach(([key, value]) => rect.setAttribute(key, value));
+    group.append(title, rect);
+    if (letter) {
+      const text = document.createElementNS(ns, 'text');
+      text.setAttribute('x', x + width / 2);
+      text.setAttribute('y', y + height / 2 + 5);
+      text.setAttribute('text-anchor', 'middle');
+      text.textContent = letter;
+      group.appendChild(text);
+    }
+    svg.appendChild(group);
+  });
+  return svg;
+}
+
+function renderDamageSummary(damage) {
+  const counts = damageCounts(damage);
+  const row = (letter, state, label, parts) => el('div', { class: 'damage-row' }, [
+    el('span', { class: `damage-key damage-key-${state}`, text: letter }),
+    el('div', {}, [
+      el('span', { class: 'damage-label', text: `${parts.length} ${label}` }),
+      parts.length > 0 ? el('span', { class: 'small muted damage-parts', text: partLabels(parts) }) : null
+    ])
+  ]);
+  const holder = el('div', { class: 'damage-summary' }, [
+    row('D', 'changed', 'değişen', damage.changed),
+    row('B', 'painted', 'boyalı', damage.painted),
+    row('L', 'local', 'lokal boyalı', damage.localPainted),
+    el('div', { class: 'damage-row' }, [
+      el('span', { class: 'damage-key damage-key-original' }),
+      el('span', { class: 'damage-label', text: `${counts.original} orijinal` })
+    ])
+  ]);
+  (damage.notes || []).forEach((note) => holder.appendChild(el('p', { class: 'small muted', text: note })));
+  return holder;
+}
+
+function renderSignals(signals) {
+  const list = el('div', { class: 'signals' });
+  signals.forEach((signal) => {
+    const quotes = signal.snippets.map(({ before, match, after }) => el('p', { class: 'signal-quote' }, [
+      before ? `${before} ` : null,
+      el('mark', { text: match }),
+      after ? ` ${after}` : null
+    ]));
+    list.appendChild(el('div', { class: 'signal' }, [
+      el('span', { class: 'signal-label', text: signal.label }),
+      ...quotes
+    ]));
+  });
+  return list;
+}
+
+/** Null for anything that is not a vehicle. Reads only what the record already holds. */
+function renderVehicleReport(record, terms) {
+  if (!isVehicle(record)) return null;
+  const fields = record.fields || {};
+  const signals = vehicleSignals(record.description, terms);
+  const heavy = fields['Ağır Hasar Kayıtlı'];
+  if (!record.damage && signals.length === 0 && !heavy) return null;
+  const card = el('section', { class: 'card vehicle-report' }, el('div', { class: 'vehicle-head' }, [
+    el('h2', { text: 'Araç raporu' }),
+    heavy ? el('span', {
+      class: `pill ${/^hay[ıi]r$/i.test(heavy) ? 'pill-low' : 'pill-high'}`,
+      text: `Ağır hasar kayıtlı: ${heavy}`
+    }) : null
+  ]));
+  if (record.damage) {
+    card.appendChild(el('div', { class: 'vehicle-damage' }, [renderDamageDiagram(record.damage), renderDamageSummary(record.damage)]));
+  }
+  if (signals.length > 0) {
+    card.append(el('h3', { class: 'vehicle-subhead', text: 'Satıcının açıklamasında' }), renderSignals(signals));
+  }
+  return card;
+}
+
+function comparisonText(comparison) {
+  const describe = (diff, higher, lower) => {
+    if (diff === null) return null;
+    if (diff === 0) return 'medyanla aynı';
+    return `%${Math.abs(diff)} ${diff > 0 ? higher : lower}`;
+  };
+  return {
+    scope: `Sepetteki ${comparison.count} ${comparison.key} ilanına göre${comparison.closeYears ? ' (±2 model yılı)' : ''}`,
+    price: describe(comparison.priceDiff, 'pahalı', 'ucuz'),
+    km: describe(comparison.kmDiff, 'fazla', 'az')
+  };
+}
+
+function renderPeerComparison(comparison) {
+  const text = comparisonText(comparison);
+  const stat = (label, value, base) => el('div', { class: 'peer-stat' }, [
+    el('span', { class: 'small muted', text: label }),
+    el('span', { class: 'peer-value', text: value }),
+    el('span', { class: 'small muted', text: base })
+  ]);
+  return el('section', { class: 'card' }, [
+    el('h2', { class: 'card-title', text: text.scope }),
+    el('div', { class: 'peer-stats' }, [
+      text.price ? stat('Fiyat', text.price, `Medyan ${formatNumber(comparison.medianPrice)} ${comparison.currency}`) : null,
+      text.km ? stat('KM', text.km, `Medyan ${formatNumber(comparison.medianKm)} km`) : null
+    ])
+  ]);
+}
+
+/** Model-wide specs in collapsible groups. openSet remembers which ones stay open across redraws. */
+function renderTechnical(record, openSet) {
+  const technical = record.technical;
+  if (!technical) return null;
+  const group = (title, content) => {
+    const details = el('details', { class: 'fold' }, [el('summary', { text: title }), content]);
+    if (openSet && openSet.has(title)) details.open = true;
+    details.addEventListener('toggle', () => {
+      if (!openSet) return;
+      if (details.open) openSet.add(title);
+      else openSet.delete(title);
+    });
+    return details;
+  };
+  const card = el('section', { class: 'card' }, [
+    el('h2', { text: 'Teknik özellikler' }),
+    el('p', { class: 'small muted', text: 'Modelin genel verileridir, bu araca özel olmayabilir.' })
+  ]);
+  Object.entries(technical.sections || {}).forEach(([title, rows]) => {
+    card.appendChild(group(title, renderFacts(Object.entries(rows))));
+  });
+  const equipment = Object.entries(technical.equipment || {});
+  if (equipment.length > 0) {
+    card.appendChild(group('Model donanımı', el('div', { class: 'equipment' }, equipment.map(([category, items]) => el('div', {}, [
+      el('p', { class: 'equipment-category', text: category }),
+      el('p', { class: 'small muted', text: items.join(', ') })
+    ])))));
+  }
+  return card;
+}
+
+/** Numbers the seller wrote in the description. The site's protected phone field is not read. */
+function renderPhones(record) {
+  const phones = extractPhones(record.description);
+  if (phones.length === 0) return null;
+  return el('section', { class: 'card' }, [
+    el('h2', { class: 'card-title', text: 'Açıklamadaki telefon' }),
+    el('div', { class: 'btn-row' }, phones.map((phone) => el('a', {
+      class: 'btn num', href: `tel:${phone.replace(/\s/g, '')}`, icon: 'phone', text: phone
+    })))
+  ]);
+}
+
+function renderNoteEditor(id, onSaved) {
+  const holder = el('div', { class: 'detail-fields' });
+  chrome.storage.local.get('annotations').then(({ annotations = {} }) => {
+    const note = annotations[id] || {};
+    const save = async (patch) => {
+      const { annotations: latest = {} } = await chrome.storage.local.get('annotations');
+      latest[id] = { ...(latest[id] || {}), ...patch };
+      await chrome.storage.local.set({ annotations: latest });
+      if (onSaved) onSaved(latest);
+    };
+    const rating = el('select', {}, [
+      el('option', { value: '', text: 'Puan yok' }),
+      ...[1, 2, 3, 4, 5].map((value) => el('option', { value: String(value), text: `${value} puan` }))
+    ]);
+    rating.value = note.rating ? String(note.rating) : '';
+    rating.addEventListener('change', () => save({ rating: rating.value === '' ? null : Number(rating.value) }));
+    const tags = el('input', { type: 'text', placeholder: 'Örn. görülecek, pazarlık' });
+    tags.value = (note.tags || []).join(', ');
+    tags.addEventListener('change', () => save({ tags: tags.value.split(',').map((tag) => tag.trim()).filter(Boolean) }));
+    const text = el('input', { type: 'text', placeholder: 'Bu ilan için notun' });
+    text.value = note.note || '';
+    text.addEventListener('change', () => save({ note: text.value }));
+    holder.append(
+      el('label', { class: 'field' }, [el('span', { text: 'Puanım' }), rating]),
+      el('label', { class: 'field' }, [el('span', { text: 'Etiketler, virgülle' }), tags]),
+      el('label', { class: 'field' }, [el('span', { text: 'Notum' }), text])
+    );
+  });
+  return holder;
 }
 
 /** Opens the parcel on the TKGM map. When a name can't be matched it opens the search page instead. */
@@ -272,12 +499,13 @@ async function loadRates(features, force) {
 
 /** Everything the export needs to know, gathered once */
 async function exportContext(features, rates) {
-  const { annotations = {}, scoreWeights } = await chrome.storage.local.get(['annotations', 'scoreWeights']);
+  const { annotations = {}, scoreWeights, vehicleTerms = [] } = await chrome.storage.local.get(['annotations', 'scoreWeights', 'vehicleTerms']);
   return {
     features,
     rates,
     annotations,
     scoreWeights,
+    vehicleTerms,
     now: Date.now(),
     includeRemoteHistory: features.bulkPriceHistory
   };

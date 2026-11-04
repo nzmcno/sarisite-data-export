@@ -46,7 +46,7 @@ Sahibinden CSV/Excel Exporter ("the Extension") is committed to protecting your 
 4. **Download**: File is saved to your download folder
 5. **Retention**: Only what you add to the basket is kept, until you remove it
 
-Seller names and phone numbers are not extracted. Listing descriptions are copied as written, so they can contain contact details the seller typed there.
+Seller names and the phone field the site keeps encrypted are not read. Listing descriptions are copied as written, and phone numbers the seller typed into a description are also exported in their own column. If you export or share these numbers, you are responsible for handling them lawfully, including under KVKK.
 
 ### Optional Features
 

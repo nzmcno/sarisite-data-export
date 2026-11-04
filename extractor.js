@@ -261,7 +261,8 @@ function sbListResult(doc, pageUrl, columns, rows) {
 
 function sbExtractDamage(doc) {
   const parts = [...doc.querySelectorAll('.car-parts > *')];
-  const noteElements = [...doc.querySelectorAll('.car-damage-info-list li')];
+  // That list also repeats the part names under group titles. Those are already in the parts above.
+  const noteElements = [...doc.querySelectorAll('.car-damage-info-list li:not(.pair-title):not(.selected-damage)')];
   if (parts.length === 0 && noteElements.length === 0) return null;
   const damage = { changed: [], painted: [], localPainted: [], originalCount: 0, notes: noteElements.map(sbText).filter(Boolean) };
   parts.forEach((part) => {
@@ -275,7 +276,46 @@ function sbExtractDamage(doc) {
   return damage;
 }
 
-/** Business details only. The personal name and every phone field are left alone on purpose. */
+/** The model's general specs and standard equipment, as the listing page already holds them */
+function sbExtractTechnical(doc) {
+  const root = doc.querySelector('#technical-details');
+  if (!root) return null;
+  const sections = {};
+  root.querySelectorAll('h3').forEach((heading) => {
+    const table = heading.nextElementSibling;
+    if (!table || table.tagName !== 'TABLE') return;
+    const rows = {};
+    table.querySelectorAll('tr').forEach((row) => {
+      const title = sbText(row.querySelector('td.title'));
+      const value = sbText(row.querySelector('td.value'));
+      if (title && value) rows[title] = value;
+    });
+    if (Object.keys(rows).length > 0) sections[sbText(heading)] = rows;
+  });
+  const equipment = {};
+  let category = 'Diğer';
+  const equipmentTable = root.querySelector('.equipments li table');
+  if (equipmentTable) {
+    equipmentTable.querySelectorAll('tr').forEach((row) => {
+      const heading = row.querySelector('td[colspan] b');
+      if (heading) {
+        category = sbText(heading);
+        return;
+      }
+      const item = sbText(row.querySelector('td.equipmentDescription'));
+      if (!item) return;
+      if (!equipment[category]) equipment[category] = [];
+      equipment[category].push(item);
+    });
+  }
+  if (Object.keys(sections).length === 0 && Object.keys(equipment).length === 0) return null;
+  return { sections, equipment };
+}
+
+/**
+ * Business details only. The personal name is left alone, and so is the phone field:
+ * the site keeps that number encrypted on purpose and it is not decoded here.
+ */
 function sbExtractSeller(doc) {
   const box = doc.querySelector('.classifiedUserBox, .user-info-module');
   if (!box) return { storeName: '', license: '', memberSince: '' };
@@ -336,6 +376,7 @@ function sbExtractDetail(doc, pageUrl) {
     attributes,
     features,
     damage: sbExtractDamage(doc),
+    technical: sbExtractTechnical(doc),
     description: sbMultilineText(doc.querySelector('#classifiedDescription')),
     photos,
     lat: usableMap ? map.getAttribute('data-lat') || '' : '',
@@ -350,7 +391,7 @@ function sbExtractDetail(doc, pageUrl) {
   };
 }
 
-/** Classify a document and pull everything out of it. Seller names and phones are never read. */
+/** Classify a document and pull everything out of it. Seller names and the protected phone field are never read. */
 function sbExtractFromDocument(doc, pageUrl) {
   const hasTable = !!doc.querySelector('#searchResultsTable');
   const hasGallery = !!doc.querySelector('td.searchResultsGalleryItem[data-id]');

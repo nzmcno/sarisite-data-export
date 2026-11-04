@@ -199,7 +199,7 @@ test('each switch adds only its own columns', () => {
   assert.ok(header({ notesTags: true })[0].includes('Notum'));
   assert.ok(header({ dealScore: true })[0].includes('Fırsat Puanı'));
   assert.ok(header({ extraData: true })[0].includes('Mağaza'));
-  const parsed = header({ descriptionParsing: true });
+  const parsed = header({});
   assert.strictEqual(parsed[1][parsed[0].indexOf('Açıklamada Tramer')], 12500);
   const computed = header({ computedFields: true });
   assert.strictEqual(computed[1][computed[0].indexOf('Değişen Parça Sayısı')], 1);
@@ -231,11 +231,68 @@ test('manual rates replace only the units filled in', () => {
   assert.strictEqual(lib.applyManualRates(null, {}), null);
 });
 
-test('phones are masked without touching ordinary numbers', () => {
-  assert.strictEqual(lib.maskPhones('Ara 0 (532) 123 45 67 lütfen'), 'Ara [telefon gizlendi] lütfen');
-  assert.strictEqual(lib.maskPhones('+90 212 626 66 55'), '[telefon gizlendi]');
-  assert.strictEqual(lib.maskPhones('05321234567'), '[telefon gizlendi]');
-  assert.strictEqual(lib.maskPhones('104.500 km, 2022 model, 15.000 KM önce'), '104.500 km, 2022 model, 15.000 KM önce');
+test('phones written in a description come out in one format', () => {
+  assert.deepStrictEqual(lib.extractPhones('Ara 0 (532) 123 45 67 lütfen, ya da 05321234567 veya +90 212 626 66 55'), ['0532 123 45 67', '0212 626 66 55']);
+  assert.deepStrictEqual(lib.extractPhones('104.500 km, 2022 model, 15.000 KM önce'), []);
+  assert.deepStrictEqual(lib.extractPhones(null), []);
+});
+
+const CAR_TEXT = 'Şase podye direkler işlemsizdir 2012 1.6 tdi 105 bg ön üç parça değişen Airbag açmamıştır Expertiz raporu mevcut 30 bin km önce triğer bakımları yapılmıştır. Vize 02/2027 direkt arayın km değişiklik gösterebilir';
+
+test('vehicle signals quote the seller and skip look-alike words', () => {
+  const signals = lib.vehicleSignals(CAR_TEXT);
+  const labels = signals.map((signal) => signal.label);
+  assert.deepStrictEqual(labels, ['Şase, podye, direk', 'Airbag', 'KM', 'Muayene', 'Ekspertiz', 'Bakım']);
+  assert.strictEqual(signals[0].snippets[0].match, 'Şase');
+  assert.ok(signals[0].snippets[0].after.startsWith('podye direkler'));
+  assert.ok(signals[1].snippets[0].after.startsWith('açmamıştır'));
+  assert.ok(lib.signalText(signals[3]).includes('Vize 02/2027'));
+  assert.deepStrictEqual(lib.vehicleSignals('Direkt ararsanız sevinirim'), []);
+  assert.strictEqual(lib.vehicleSignals('AIRBAG ORİJİNAL')[0].label, 'Airbag');
+  assert.deepStrictEqual(lib.vehicleSignals(''), []);
+});
+
+test('custom search words work and special characters are safe', () => {
+  const signals = lib.vehicleSignals('Partikül iptal edilmiştir, fiyat (son) budur', ['partikül', '(son)', '  ', 'yok böyle']);
+  assert.deepStrictEqual(signals.map((signal) => [signal.label, signal.custom]), [['partikül', true], ['(son)', true]]);
+});
+
+test('vehicles are compared with the same series, close model years first', () => {
+  const car = (id, year, km, amount) => ({ id, category: ['Vasıta', 'Otomobil'], fields: { Marka: 'VW', Seri: 'Golf', 'Yıl': String(year), KM: String(km) }, price: { amount, currency: 'TL' } });
+  const records = [car('1', 2012, 100000, 900), car('2', 2012, 200000, 1000), car('3', 2013, 100000, 1200), car('4', 2020, 10000, 5000)];
+  const result = lib.vehicleComparison(records[0], records);
+  assert.strictEqual(result.count, 2);
+  assert.strictEqual(result.closeYears, true);
+  assert.strictEqual(result.priceDiff, -18);
+  assert.strictEqual(result.kmDiff, -33);
+  assert.strictEqual(lib.vehicleComparison(records[0], records.slice(0, 2)), null);
+  assert.strictEqual(lib.vehicleComparison({ id: '9', fields: {}, price: { amount: 5, currency: 'TL' } }, records), null);
+  const [group] = lib.vehicleGroups(records);
+  assert.strictEqual(group.key, 'VW Golf');
+  assert.strictEqual(group.count, 4);
+  assert.strictEqual(group.minPrice, 900);
+});
+
+test('only vehicle listings count as vehicles', () => {
+  assert.ok(lib.isVehicle({ category: ['Vasıta', 'Otomobil'] }));
+  assert.ok(lib.isVehicle({ fields: { KM: '5', 'Yıl': '2020' } }));
+  assert.ok(!lib.isVehicle({ category: ['Emlak', 'Konut'], fields: { 'm²': '90' } }));
+});
+
+test('vehicle columns appear for cars and stay out of other listings', () => {
+  const technical = { sections: { 'Genel Bakış': { 'Motor Tipi': 'Dizel', 'Toplam yıllık MTV (2012 model ve 1598 cc)': '1.539 TL' }, 'Motor ve Performans': { 'Motor Tipi': 'Tekrar' } }, equipment: { 'Güvenlik': ['ABS', 'EBD'] } };
+  assert.deepStrictEqual(lib.flatTechnical({ technical }), [['Motor Tipi', 'Dizel'], ['Toplam yıllık MTV', '1.539 TL']]);
+  const carRecord = { id: '1', title: 'Golf', category: ['Vasıta'], fields: {}, technical, description: 'Airbag açmamış. Partikül iptal. Ara 0532 123 45 67' };
+  const rows = lib.recordsToRows([carRecord], [], { features: normalizeFeatures({}), vehicleTerms: ['partikül'] });
+  const cell = (name) => rows[1][rows[0].indexOf(name)];
+  assert.ok(cell('Açıklama: Airbag').includes('açmamış'));
+  assert.ok(cell('Arama: partikül').includes('iptal'));
+  assert.strictEqual(cell('Açıklamadaki Telefon'), '0532 123 45 67');
+  assert.strictEqual(cell('Teknik: Motor Tipi'), 'Dizel');
+  assert.strictEqual(cell('Model Donanımı'), 'ABS | EBD');
+  assert.ok(cell('Açıklama').includes('0532 123 45 67'));
+  const home = lib.recordsToRows([{ id: '2', title: 'Ev', category: ['Emlak'], fields: {}, description: 'Direk yanında, airbag yok' }], [], { features: normalizeFeatures({}) });
+  assert.ok(!home[0].some((name) => name.startsWith('Açıklama: ')));
 });
 
 test('description parsing reads what sellers commonly write', () => {
@@ -274,20 +331,6 @@ test('deal score stays in range, follows price and skips missing data', () => {
   assert.ok(cheap <= 100 && dear >= 0);
   assert.strictEqual(lib.dealScore({ fields: {} }, { now: 0 }), null);
   assert.strictEqual(lib.dealScore({ price: { amount: 5 }, fields: { 'm²': '1' } }, context, { price: 0, freshness: 0, photos: 0, damage: 0 }), null);
-});
-
-test('duplicates are found by photo, parcel and title with price', () => {
-  const records = [
-    { id: '1', title: 'A', image: 'https://i/thmb_abc.jpg', fields: {}, price: { amount: 1 } },
-    { id: '2', title: 'B', photos: ['https://i/x5_abc.jpg'], fields: {}, price: { amount: 2 } },
-    { id: '3', title: 'C', fields: { 'Ada No': '235', 'Parsel No': '3', 'İl': 'Kocaeli' }, price: { amount: 3 } },
-    { id: '4', title: 'D', fields: { 'Ada No': '235', 'Parsel No': '3', 'İl': 'Kocaeli' }, price: { amount: 4 } },
-    { id: '5', title: 'Aynı Başlık!', fields: {}, price: { amount: 9 } },
-    { id: '6', title: 'aynı başlık', fields: {}, price: { amount: 9 } },
-    { id: '7', title: 'Tek', fields: {}, price: { amount: 7 } }
-  ];
-  const reasons = lib.findDuplicates(records).map((group) => `${group.reason}:${group.ids.join()}`).sort();
-  assert.deepStrictEqual(reasons, ['Aynı ada ve parsel:3,4', 'Aynı başlık ve fiyat:5,6', 'Aynı fotoğraf:1,2']);
 });
 
 test('map files include only located listings and escape text', () => {

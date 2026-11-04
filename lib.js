@@ -113,6 +113,7 @@ function detailToRecord(listing) {
     fields,
     features: listing.features,
     damage: listing.damage,
+    ...(listing.technical ? { technical: listing.technical } : {}),
     description: listing.description,
     photos: listing.photos,
     lat: listing.lat,
@@ -232,15 +233,21 @@ function basketColumns(records, context) {
       ['İlan Klibi', (r) => (r.media && r.media.clip ? 'Evet' : '')]
     );
   }
-  if (on.descriptionParsing) {
-    const parsed = (r) => parseDescription(r.description);
-    columns.push(
-      ['Açıklamada Tramer', (r) => parsed(r).tramer],
-      ['Açıklamada Cephe', (r) => parsed(r).facade],
-      ['Açıklamada Anahtar Kelimeler', (r) => parsed(r).keywords],
-      ['Açıklamada Ekstralar', (r) => parsed(r).extras]
-    );
-  }
+  const parsed = (r) => parseDescription(r.description);
+  columns.push(
+    ['Açıklamada Tramer', (r) => parsed(r).tramer],
+    ['Açıklamada Cephe', (r) => parsed(r).facade],
+    ['Açıklamada Anahtar Kelimeler', (r) => parsed(r).keywords],
+    ['Açıklamada Ekstralar', (r) => parsed(r).extras],
+    ['Açıklamadaki Telefon', (r) => extractPhones(r.description).join(', ')]
+  );
+  vehicleSignalNames(context && context.vehicleTerms).forEach((name) => {
+    columns.push([name, (r) => (isVehicle(r) ? signalColumn(r, name, context && context.vehicleTerms) : '')]);
+  });
+  technicalColumnNames(records).forEach((name) => {
+    columns.push([`Teknik: ${name}`, (r) => (flatTechnical(r).find(([title]) => title === name) || [])[1]]);
+  });
+  columns.push(['Model Donanımı', (r) => (r.technical ? Object.values(r.technical.equipment || {}).flat().join(' | ') : '')]);
   if (context && context.includeRemoteHistory) {
     columns.push(
       ['Site: İlk Fiyat', (r) => r.remoteHistory && r.remoteHistory.initialPrice],
@@ -256,7 +263,7 @@ function basketColumns(records, context) {
     ['Boyalı Parçalar', (r) => r.damage && partLabels(r.damage.painted)],
     ['Lokal Boyalı Parçalar', (r) => r.damage && partLabels(r.damage.localPainted)],
     ['Hasar Notları', (r) => r.damage && r.damage.notes.join(' | ')],
-    ['Açıklama', (r) => (on.maskPhones ? maskPhones(r.description) : r.description)],
+    ['Açıklama', (r) => r.description],
     ['Fotoğraf Sayısı', (r) => (r.photos ? r.photos.length : '')],
     ['Fotoğraflar', (r) => (r.photos || []).join(' ')],
     ['Video', (r) => (r.hasVideo ? 'Evet' : '')],
@@ -470,8 +477,14 @@ function convertPrice(price, rates) {
  */
 const PHONE_PATTERN = /(?:\+?90[\s.-]*)?(?:0[\s.-]*)?\(?0?[2-5]\d{2}\)?[\s.-]*\d{3}[\s.-]*\d{2}[\s.-]*\d{2}\b/g;
 
-function maskPhones(text) {
-  return String(text == null ? '' : text).replace(PHONE_PATTERN, '[telefon gizlendi]');
+/** Numbers the seller typed into the text, one format, no repeats */
+function extractPhones(text) {
+  const found = String(text == null ? '' : text).match(PHONE_PATTERN) || [];
+  const phones = found.map((raw) => {
+    const digits = raw.replace(/\D/g, '').slice(-10);
+    return `0${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 8)} ${digits.slice(8)}`;
+  });
+  return [...new Set(phones)];
 }
 
 /** Pulls commonly written facts from free text. Everything here is what the seller wrote. */
@@ -525,6 +538,209 @@ function parseDescription(text) {
 }
 
 /** Ordered [label, value] pairs. A value only appears when its inputs exist in this listing. */
+/**
+ * ============================================================================
+ * VEHICLES
+ * ============================================================================
+ * Everything here reads data the opened listing page already holds. Signals are
+ * what the seller wrote, shown in their words: no claim about the car is made.
+ */
+const VEHICLE_SIGNALS = [
+  ['Şase, podye, direk', 'sase|podye|podya|direk(?!t)|diregi'],
+  ['Airbag', 'airbag|hava yasti'],
+  ['KM', '(?:orjinal|orijinal)\\s+km|km\\s+(?:orjinal|orijinal|degis)|km\\s*\\S*\\s*(?:orjinal|orijinal)'],
+  ['Tramer ve hasar kaydı', 'tramer|hasar\\s+kay'],
+  ['Muayene', 'muayene|vize'],
+  ['Ekspertiz', 'ekspertiz|expertiz|eksper'],
+  ['Bakım', 'triger|bakim']
+];
+const SIGNAL_REACH = 6;
+
+/** Same length as the input, so positions carry over. "AIRBAG", "aırbag" and "airbag" all match. */
+function foldText(text) {
+  return text.toLocaleLowerCase('tr').replace(/[ıİ]/g, 'i').replace(/ş/g, 's').replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c');
+}
+
+function findSnippets(text, source) {
+  const words = String(text == null ? '' : text).normalize('NFC').split(/\s+/).filter(Boolean);
+  const folded = words.map(foldText);
+  const starts = [];
+  let offset = 0;
+  folded.forEach((word) => {
+    starts.push(offset);
+    offset += word.length + 1;
+  });
+  const wordAt = (position) => {
+    let index = 0;
+    while (index + 1 < starts.length && starts[index + 1] <= position) index += 1;
+    return index;
+  };
+  const snippets = [];
+  let covered = -1;
+  for (const match of folded.join(' ').matchAll(new RegExp(`(?<!\\p{L})(?:${source})`, 'gu'))) {
+    const first = wordAt(match.index);
+    if (first <= covered) continue;
+    const last = wordAt(match.index + match[0].length - 1);
+    const from = Math.max(0, first - SIGNAL_REACH);
+    const to = Math.min(words.length, last + SIGNAL_REACH + 1);
+    snippets.push({
+      before: `${from > 0 ? '… ' : ''}${words.slice(from, first).join(' ')}`.trim(),
+      match: words.slice(first, last + 1).join(' '),
+      after: `${words.slice(last + 1, to).join(' ')}${to < words.length ? ' …' : ''}`.trim()
+    });
+    covered = to - 1;
+    if (snippets.length === 2) break;
+  }
+  return snippets;
+}
+
+function customTermSource(term) {
+  return foldText(String(term).normalize('NFC').trim()).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+}
+
+/** [{ label, snippets }] for each topic the description mentions, then the user's own search words */
+function vehicleSignals(description, customTerms) {
+  const signals = [];
+  VEHICLE_SIGNALS.forEach(([label, source]) => {
+    const snippets = findSnippets(description, source);
+    if (snippets.length > 0) signals.push({ label, snippets });
+  });
+  (customTerms || []).map((term) => String(term).trim()).filter(Boolean).forEach((term) => {
+    const snippets = findSnippets(description, customTermSource(term));
+    if (snippets.length > 0) signals.push({ label: term, snippets, custom: true });
+  });
+  return signals;
+}
+
+function signalText(signal) {
+  return signal.snippets.map(({ before, match, after }) => [before, match, after].filter(Boolean).join(' ')).join(' | ');
+}
+
+function vehicleSignalNames(customTerms) {
+  return [
+    ...VEHICLE_SIGNALS.map(([label]) => `Açıklama: ${label}`),
+    ...(customTerms || []).map((term) => String(term).trim()).filter(Boolean).map((term) => `Arama: ${term}`)
+  ];
+}
+
+function signalColumn(record, name, customTerms) {
+  const label = name.replace(/^(Açıklama|Arama): /, '');
+  const signal = vehicleSignals(record.description, customTerms).find((item) => item.label === label);
+  return signal ? signalText(signal) : '';
+}
+
+function isVehicle(record) {
+  if ((record.category || []).some((name) => /^vasıta$/i.test(String(name).trim()))) return true;
+  const fields = record.fields || {};
+  return !!record.damage || (fields.KM !== undefined && fields['Yıl'] !== undefined);
+}
+
+function damageCounts(damage) {
+  if (!damage) return null;
+  return {
+    changed: damage.changed.length,
+    painted: damage.painted.length,
+    localPainted: damage.localPainted.length,
+    original: damage.originalCount
+  };
+}
+
+/** Specs as [title, value]. The model year in the MTV title would otherwise make one column per model. */
+function flatTechnical(record) {
+  const seen = new Set();
+  const rows = [];
+  Object.values((record.technical && record.technical.sections) || {}).forEach((section) => {
+    Object.entries(section).forEach(([title, value]) => {
+      const clean = title.replace(/\s*\(\d{4} model.*\)\s*$/, '');
+      if (seen.has(clean)) return;
+      seen.add(clean);
+      rows.push([clean, value]);
+    });
+  });
+  return rows;
+}
+
+function technicalColumnNames(records) {
+  const names = [];
+  records.forEach((record) => {
+    flatTechnical(record).forEach(([title]) => {
+      if (!names.includes(title)) names.push(title);
+    });
+  });
+  return names;
+}
+
+function vehiclePeerKey(record) {
+  const fields = record.fields || {};
+  if (fields.Marka && fields.Seri) return `${fields.Marka} ${fields.Seri}`;
+  const category = record.category || [];
+  if (category.length >= 4) return `${category[2]} ${category[3]}`;
+  return fields.Marka || null;
+}
+
+function middleOf(values) {
+  const sorted = values.filter((value) => value !== null && value !== undefined && value > 0).sort((a, b) => a - b);
+  return sorted.length ? median(sorted) : null;
+}
+
+function percentFrom(value, base) {
+  return value && base ? Math.round(((value - base) / base) * 100) : null;
+}
+
+/** This car against the same make and series in the basket. Needs 2 others, prefers close model years. */
+function vehicleComparison(record, records) {
+  const key = vehiclePeerKey(record);
+  if (!key || !record.price || !record.price.amount) return null;
+  const peers = records.filter((other) => other.id !== record.id
+    && isVehicle(other)
+    && vehiclePeerKey(other) === key
+    && other.price && other.price.amount
+    && other.price.currency === record.price.currency);
+  const year = toNumber((record.fields || {})['Yıl']);
+  const near = year === null ? [] : peers.filter((other) => {
+    const otherYear = toNumber((other.fields || {})['Yıl']);
+    return otherYear !== null && Math.abs(otherYear - year) <= 2;
+  });
+  const closeYears = near.length >= 2;
+  const group = closeYears ? near : peers;
+  if (group.length < 2) return null;
+  const medianPrice = middleOf(group.map((other) => other.price.amount));
+  const medianKm = middleOf(group.map((other) => toNumber((other.fields || {}).KM)));
+  return {
+    key,
+    closeYears,
+    count: group.length,
+    medianPrice,
+    medianKm,
+    currency: record.price.currency,
+    priceDiff: percentFrom(record.price.amount, medianPrice),
+    kmDiff: percentFrom(toNumber((record.fields || {}).KM), medianKm)
+  };
+}
+
+/** One summary row per make and series, largest group first */
+function vehicleGroups(records) {
+  const groups = new Map();
+  records.filter(isVehicle).forEach((record) => {
+    const key = vehiclePeerKey(record);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(record);
+  });
+  return [...groups.entries()].map(([key, members]) => {
+    const { currency } = computeStats(members);
+    const prices = members.filter((record) => record.price && record.price.currency === currency).map((record) => record.price.amount);
+    return {
+      key,
+      count: members.length,
+      currency,
+      medianPrice: middleOf(prices),
+      minPrice: prices.filter((price) => price > 0).length ? Math.min(...prices.filter((price) => price > 0)) : null,
+      medianKm: middleOf(members.map((record) => toNumber((record.fields || {}).KM)))
+    };
+  }).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key, 'tr'));
+}
+
 function computedFields(record, context) {
   const now = new Date((context && context.now) || Date.now());
   const fields = record.fields || {};
@@ -610,30 +826,6 @@ function basketContext(records, now) {
   };
 }
 
-/** Groups listings that look like one property or vehicle posted more than once */
-function findDuplicates(records) {
-  const normalize = (text) => String(text || '').toLocaleLowerCase('tr').replace(/[^a-z0-9çğıöşü]+/g, ' ').trim();
-  const photoName = (url) => String(url || '').split(/[?#]/)[0].split('/').pop().replace(/^(thmb|x5|lthmb|big)_/, '');
-  const groups = new Map();
-  const add = (key, reason, record) => {
-    if (!groups.has(key)) groups.set(key, { reason, ids: [] });
-    if (!groups.get(key).ids.includes(record.id)) groups.get(key).ids.push(record.id);
-  };
-  records.forEach((record) => {
-    (record.photos || (record.image ? [record.image] : [])).slice(0, 3).forEach((url) => {
-      const name = photoName(url);
-      if (name) add(`photo:${name}`, 'Aynı fotoğraf', record);
-    });
-    const fields = record.fields || {};
-    const block = toNumber(fields['Ada No']);
-    const parcel = toNumber(fields['Parsel No']);
-    if (block !== null && parcel !== null) add(`parcel:${fields['İl'] || ''}:${block}:${parcel}`, 'Aynı ada ve parsel', record);
-    const title = normalize(record.title);
-    if (title && record.price && record.price.amount) add(`title:${title}:${record.price.amount}`, 'Aynı başlık ve fiyat', record);
-  });
-  return [...groups.values()].filter((group) => group.ids.length > 1);
-}
-
 function recordsToGeoJson(records) {
   const features = records
     .filter((record) => toCoordinate(record.lat) !== null && toCoordinate(record.lon) !== null)
@@ -676,7 +868,7 @@ function toTsv(rows) {
 const COLUMN_PRESETS = {
   emlak: { label: 'Emlak', keep: ['İlan No', 'Başlık', 'Fiyat', 'Para Birimi', 'Hesaplanan Fiyat/m²', 'Konum', 'm² (Brüt)', 'm² (Net)', 'Oda Sayısı', 'Bina Yaşı', 'Bulunduğu Kat', 'Kat Sayısı', 'Isıtma', 'Aidat (TL)', 'Site Adı', 'Kimden', 'İlan Tarihi (ISO)', 'İlan Linki'] },
   arsa: { label: 'Arsa', keep: ['İlan No', 'Başlık', 'Fiyat', 'Para Birimi', 'm²', 'm² Fiyatı', 'Konum', 'İmar Durumu', 'Ada No', 'Parsel No', 'Kaks (Emsal)', 'Gabari', 'Tapu Durumu', 'Kimden', 'İlan Tarihi (ISO)', 'İlan Linki'] },
-  vasita: { label: 'Vasıta', keep: ['İlan No', 'Başlık', 'Fiyat', 'Para Birimi', 'Marka', 'Seri', 'Model', 'Yıl', 'KM', 'Yakıt / Motor Tipi', 'Vites', 'Kasa Tipi', 'Renk', 'Ağır Hasar Kayıtlı', 'Değişen Parçalar', 'Boyalı Parçalar', 'Konum', 'Kimden', 'İlan Tarihi (ISO)', 'İlan Linki'] }
+  vasita: { label: 'Vasıta', keep: ['İlan No', 'Başlık', 'Fiyat', 'Para Birimi', 'Marka', 'Seri', 'Model', 'Yıl', 'KM', 'Yakıt / Motor Tipi', 'Vites', 'Kasa Tipi', 'Renk', 'Ağır Hasar Kayıtlı', 'Motor Gücü', 'Motor Hacmi', 'Çekiş', 'Değişen Parçalar', 'Boyalı Parçalar', 'Lokal Boyalı Parçalar', 'Hasar Notları', 'Değişen Parça Sayısı', 'Boyalı Parça Sayısı', 'Yıllık KM', 'Açıklamada Tramer', 'Açıklama: Şase, podye, direk', 'Açıklama: Airbag', 'Açıklama: KM', 'Açıklama: Tramer ve hasar kaydı', 'Açıklama: Muayene', 'Açıklamadaki Telefon', 'Konum', 'Kimden', 'İlan Tarihi (ISO)', 'İlan Linki'] }
 };
 
 function hiddenColumnsForPreset(presetId, allNames) {
@@ -817,7 +1009,8 @@ function parseBackup(text) {
       basket,
       annotations: body.annotations && typeof body.annotations === 'object' ? body.annotations : {},
       savedSearches: body.savedSearches && typeof body.savedSearches === 'object' ? body.savedSearches : {},
-      hiddenColumns: Array.isArray(body.hiddenColumns) ? body.hiddenColumns.filter((name) => typeof name === 'string') : []
+      hiddenColumns: Array.isArray(body.hiddenColumns) ? body.hiddenColumns.filter((name) => typeof name === 'string') : [],
+      vehicleTerms: Array.isArray(body.vehicleTerms) ? body.vehicleTerms.filter((term) => typeof term === 'string') : []
     }
   };
 }
@@ -897,12 +1090,18 @@ if (typeof module !== 'undefined') {
     parseFallbackRates,
     applyManualRates,
     convertPrice,
-    maskPhones,
+    extractPhones,
+    isVehicle,
+    vehicleSignals,
+    signalText,
+    damageCounts,
+    vehicleComparison,
+    vehicleGroups,
+    flatTechnical,
     parseDescription,
     computedFields,
     dealScore,
     basketContext,
-    findDuplicates,
     recordsToGeoJson,
     recordsToKml,
     toTsv,

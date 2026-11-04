@@ -33,6 +33,14 @@
   --notice-ink: #831c1e;
   --grid: #ecebe5;
   --chart-mark: #c8440e;
+  --damage-changed-bg: #c4242a;
+  --damage-changed-ink: #ffffff;
+  --damage-painted-bg: #f4b63f;
+  --damage-painted-ink: #352400;
+  --damage-local-bg: #fdeab9;
+  --damage-local-ink: #6e4a05;
+  --damage-original-bg: #f8f7f4;
+  --damage-original-line: #cbc9c1;
   --radius-card: 10px;
   --radius-control: 7px;
   --control-height: 34px;
@@ -70,6 +78,14 @@
   --notice-ink: #f8b4b4;
   --grid: #2f2f35;
   --chart-mark: #e0692c;
+  --damage-changed-bg: #e0565c;
+  --damage-changed-ink: #1f0a0b;
+  --damage-painted-bg: #d29a2a;
+  --damage-painted-ink: #1a1209;
+  --damage-local-bg: #453617;
+  --damage-local-ink: #f3d699;
+  --damage-original-bg: #29292e;
+  --damage-original-line: #52525a;
 }
 
 * {
@@ -633,6 +649,207 @@ label.field {
 
 .manual-rates input {
   width: 100%;
+}
+
+/* Vehicle report */
+.vehicle-report {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vehicle-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vehicle-subhead {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 650;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.vehicle-damage {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.car-diagram {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.car-part rect {
+  stroke: transparent;
+  stroke-width: 1;
+}
+
+.car-part text {
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.car-part-changed rect { fill: var(--damage-changed-bg); }
+.car-part-changed text { fill: var(--damage-changed-ink); }
+.car-part-painted rect { fill: var(--damage-painted-bg); }
+.car-part-painted text { fill: var(--damage-painted-ink); }
+.car-part-local rect { fill: var(--damage-local-bg); }
+.car-part-local text { fill: var(--damage-local-ink); }
+
+.car-part-original rect {
+  fill: var(--damage-original-bg);
+  stroke: var(--damage-original-line);
+}
+
+.damage-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.damage-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.damage-key {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 4px;
+}
+
+.damage-key-changed { background: var(--damage-changed-bg); color: var(--damage-changed-ink); }
+.damage-key-painted { background: var(--damage-painted-bg); color: var(--damage-painted-ink); }
+.damage-key-local { background: var(--damage-local-bg); color: var(--damage-local-ink); }
+
+.damage-key-original {
+  background: var(--damage-original-bg);
+  box-shadow: inset 0 0 0 1px var(--damage-original-line); /* taste-skill-ignore: legend swatch outline */
+}
+
+.damage-label {
+  display: block;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.damage-parts {
+  display: block;
+}
+
+.signals {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.signal-label {
+  display: block;
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+.signal-quote {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 17px;
+  overflow-wrap: anywhere;
+}
+
+.signal-quote mark {
+  padding: 0 2px;
+  font-weight: 600;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-radius: 3px;
+}
+
+.peer-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.peer-stat {
+  display: flex;
+  flex-direction: column;
+  padding-left: 12px;
+  border-left: 1px solid var(--rule);
+}
+
+.peer-stat:first-child {
+  padding-left: 0;
+  border-left: none;
+}
+
+.peer-value {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.fold {
+  border-top: 1px solid var(--rule);
+}
+
+.fold > summary {
+  padding: 8px 0;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fold[open] {
+  padding-bottom: 8px;
+}
+
+.equipment {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.equipment-category {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+.detail-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-fields input,
+.detail-fields select {
+  width: 100%;
+}
+
+.term-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 @media (prefers-reduced-motion: reduce) {

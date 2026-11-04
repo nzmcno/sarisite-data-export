@@ -78,9 +78,12 @@ async function refreshPageState() {
     lead.textContent = '';
     $('pageStats').hidden = true;
     $('pageInsights').hidden = true;
+    $('pageVehicle').hidden = true;
+    $('pageVehicle').textContent = '';
   };
   try {
     const page = await readPage();
+    const terms = await loadVehicleTerms();
     if (run !== pageRefreshRun) return;
     clear();
     const problem = pageProblem(page);
@@ -95,6 +98,11 @@ async function refreshPageState() {
         el('p', { class: 'lead-caption', text: `${listing.location.raw} · ${Object.keys(listing.attributes).length} bilgi, ${listing.photos.length} fotoğraf` })
       );
       renderPageInsights(listing);
+      const report = renderVehicleReport(detailToRecord(listing), terms);
+      if (report) {
+        $('pageVehicle').appendChild(report);
+        $('pageVehicle').hidden = false;
+      }
     } else {
       const records = pageRecords(page);
       const medianPrice = pageMedianPrice(records);

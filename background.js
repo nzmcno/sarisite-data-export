@@ -112,7 +112,8 @@ async function handleBasketRestore({ data }) {
   await chrome.storage.local.set({
     annotations: { ...annotations, ...data.annotations },
     savedSearches: { ...savedSearches, ...data.savedSearches },
-    hiddenColumns: data.hiddenColumns
+    hiddenColumns: data.hiddenColumns,
+    vehicleTerms: data.vehicleTerms
   });
   return { status: 'success' };
 }

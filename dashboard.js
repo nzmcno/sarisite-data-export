@@ -3,8 +3,8 @@
 const PAGE_SIZE = 100;
 const VIEWS = [
   { id: 'basket', label: 'Sepet', icon: 'basket' },
+  { id: 'vehicles', label: 'Araç', icon: 'car' },
   { id: 'analysis', label: 'Analiz', icon: 'chart', needs: ['charts', 'dealScore'] },
-  { id: 'duplicates', label: 'Kopyalar', icon: 'copy', needs: ['duplicates'] },
   { id: 'searches', label: 'Kayıtlı aramalar', icon: 'bookmark', needs: ['snapshots'] },
   { id: 'data', label: 'Veri ve yedek', icon: 'database' },
   { id: 'settings', label: 'Ayarlar', icon: 'sliders' }
@@ -23,15 +23,18 @@ const state = {
   expanded: new Set(),
   shown: PAGE_SIZE,
   scatterField: '',
-  statusText: ''
+  statusText: '',
+  vehicleTerms: [],
+  vehicleFilters: { series: '', damage: '', sortBy: 'peer', descending: false }
 };
 
 async function loadState() {
-  const stored = await chrome.storage.local.get(['basket', 'annotations', 'hiddenColumns', 'scoreWeights']);
+  const stored = await chrome.storage.local.get(['basket', 'annotations', 'hiddenColumns', 'scoreWeights', 'vehicleTerms']);
   state.features = await loadFeatures();
   state.records = Object.values(stored.basket || {});
   state.annotations = stored.annotations || {};
   state.hiddenColumns = stored.hiddenColumns || [];
+  state.vehicleTerms = stored.vehicleTerms || [];
   state.scoreWeights = { ...DEFAULT_SCORE_WEIGHTS, ...(stored.scoreWeights || {}) };
   state.ratesResult = await loadRates(state.features, false).catch(() => ({ status: 'error', rates: null }));
   state.rates = state.ratesResult.rates;
@@ -42,6 +45,7 @@ const context = () => ({
   rates: state.rates,
   annotations: state.annotations,
   scoreWeights: state.scoreWeights,
+  vehicleTerms: state.vehicleTerms,
   now: Date.now(),
   includeRemoteHistory: state.features.bulkPriceHistory
 });
@@ -303,31 +307,12 @@ function renderDetailContent(record, columnCount) {
   }
 
   if (on.notesTags) {
-    const note = state.annotations[record.id] || {};
-    const save = async (patch) => {
-      const { annotations = {} } = await chrome.storage.local.get('annotations');
-      annotations[record.id] = { ...(annotations[record.id] || {}), ...patch };
-      state.annotations = annotations;
-      await chrome.storage.local.set({ annotations });
-    };
-    const rating = el('select', {}, [
-      el('option', { value: '', text: 'Puan yok' }),
-      ...[1, 2, 3, 4, 5].map((value) => el('option', { value: String(value), text: `${value} puan` }))
-    ]);
-    rating.value = note.rating ? String(note.rating) : '';
-    rating.addEventListener('change', () => save({ rating: rating.value === '' ? null : Number(rating.value) }));
-    const tags = el('input', { type: 'text', placeholder: 'Örn. görülecek, pazarlık' });
-    tags.value = (note.tags || []).join(', ');
-    tags.addEventListener('change', () => save({ tags: tags.value.split(',').map((tag) => tag.trim()).filter(Boolean) }));
-    const text = el('input', { type: 'text', placeholder: 'Bu ilan için notun' });
-    text.value = note.note || '';
-    text.addEventListener('change', () => save({ note: text.value }));
-    right.append(
-      el('label', { class: 'field' }, [el('span', { text: 'Puanım' }), rating]),
-      el('label', { class: 'field' }, [el('span', { text: 'Etiketler, virgülle' }), tags]),
-      el('label', { class: 'field' }, [el('span', { text: 'Notum' }), text])
-    );
+    right.appendChild(renderNoteEditor(record.id, (annotations) => { state.annotations = annotations; }));
   }
+  const phones = renderPhones(record);
+  if (phones) right.appendChild(phones);
+  const report = renderVehicleReport(record, state.vehicleTerms);
+  if (report) right.prepend(report);
 
   return el('tr', { class: 'detail-row' }, el('td', { colspan: String(columnCount) }, el('div', { class: 'detail-grid' }, [left, right])));
 }
@@ -641,27 +626,191 @@ function viewAnalysis(view) {
  * DUPLICATES AND SAVED SEARCHES
  * ============================================================================
  */
-function viewDuplicates(view) {
-  if (!state.features.duplicates) {
-    view.appendChild(titleRow('Kopyalar', 'Aynı ilanın birden fazla kez verilmesi'));
-    view.appendChild(offCard(['duplicates']));
-    return;
-  }
-  const groups = findDuplicates(state.records);
-  const byId = Object.fromEntries(state.records.map((record) => [record.id, record]));
-  view.appendChild(titleRow('Kopyalar', groups.length === 0 ? 'Olası kopya bulunmadı' : `${groups.length} olası kopya grubu`));
-  if (groups.length === 0) {
-    view.appendChild(el('section', { class: 'panel' }, el('p', { class: 'empty-text', text: 'Sepette aynı fotoğrafı, ada ve parseli ya da başlık ve fiyatı paylaşan ilan yok.' })));
-    return;
-  }
-  const list = el('div', { class: 'list-rows' });
-  groups.slice(0, 100).forEach((group) => {
-    list.appendChild(el('div', {}, [
-      el('span', { text: group.ids.map((id) => `${(byId[id].title || '').slice(0, 50)} (#${id})`).join(' · ') }),
-      el('span', { class: 'pill pill-neutral', text: group.reason })
+function vehicleRows() {
+  const vehicles = state.records.filter(isVehicle);
+  const { series, damage, sortBy, descending } = state.vehicleFilters;
+  const passes = (record) => {
+    const counts = damageCounts(record.damage);
+    if (series && `${(record.fields || {}).Marka || ''} ${(record.fields || {}).Seri || ''}`.trim() !== series) return false;
+    if (damage === 'noChanged') return !!counts && counts.changed === 0;
+    if (damage === 'clean') return !!counts && counts.changed + counts.painted + counts.localPainted === 0;
+    return true;
+  };
+  const load = (record) => {
+    const counts = damageCounts(record.damage);
+    return counts ? counts.changed * 2 + counts.painted + counts.localPainted * 0.5 : null;
+  };
+  const values = {
+    peer: (record) => {
+      const comparison = vehicleComparison(record, vehicles);
+      return comparison ? comparison.priceDiff : null;
+    },
+    price: (record) => (record.price ? record.price.amount : null),
+    km: (record) => toNumber((record.fields || {}).KM),
+    year: (record) => toNumber((record.fields || {})['Yıl']),
+    damage: load
+  };
+  const read = values[sortBy];
+  return vehicles.filter(passes).sort((a, b) => {
+    const [first, second] = [read(a), read(b)];
+    if (first === null || first === undefined) return 1;
+    if (second === null || second === undefined) return -1;
+    return descending ? second - first : first - second;
+  });
+}
+
+function damageCell(record) {
+  const counts = damageCounts(record.damage);
+  if (!counts) return el('span', { class: 'small muted', text: record.hasDetail ? 'Yok' : 'İlan açılmadı' });
+  if (counts.changed + counts.painted + counts.localPainted === 0) return el('span', { class: 'pill pill-low', text: 'Hasarsız' });
+  return el('span', { class: 'btn-row', style: 'gap: 4px; flex-wrap: nowrap' }, [
+    counts.changed ? el('span', { class: 'damage-key damage-key-changed', style: 'width: auto; padding: 0 5px', text: `${counts.changed} D` }) : null,
+    counts.painted ? el('span', { class: 'damage-key damage-key-painted', style: 'width: auto; padding: 0 5px', text: `${counts.painted} B` }) : null,
+    counts.localPainted ? el('span', { class: 'damage-key damage-key-local', style: 'width: auto; padding: 0 5px', text: `${counts.localPainted} L` }) : null
+  ]);
+}
+
+function renderVehicleRows(table) {
+  const vehicles = state.records.filter(isVehicle);
+  const rows = vehicleRows();
+  const head = table.querySelector('thead');
+  const body = table.querySelector('tbody');
+  head.replaceChildren(el('tr', {}, [
+    el('th', { text: 'İlan' }),
+    el('th', { class: 'right', text: 'Yıl' }),
+    el('th', { class: 'right', text: 'KM' }),
+    el('th', { class: 'right', text: 'Yıllık KM' }),
+    el('th', { text: 'Hasar' }),
+    el('th', { class: 'right', text: 'Tramer' }),
+    el('th', { class: 'right', text: 'Fiyat' }),
+    el('th', { class: 'right', text: 'Seriye göre', title: 'Sepetteki aynı marka ve seriye göre, mümkünse ±2 model yılı içinde' }),
+    el('th', { 'aria-label': 'Detay' })
+  ]));
+  body.textContent = '';
+  rows.forEach((record) => {
+    const fields = record.fields || {};
+    const comparison = vehicleComparison(record, vehicles);
+    const yearly = computedFields(record, { now: Date.now() }).find(([name]) => name === 'Yıllık KM');
+    const tramer = parseDescription(record.description).tramer;
+    const isOpen = state.expanded.has(record.id);
+    body.appendChild(el('tr', { class: 'listing-row' }, [
+      el('td', { class: 'cell-title' }, [
+        el('a', { href: record.url, target: '_blank', rel: 'noopener', text: record.title }),
+        el('span', { class: 'cell-sub', text: [fields.Marka, fields.Seri, fields.Model].filter(Boolean).join(' ') || record.location })
+      ]),
+      el('td', { class: 'right', text: fields['Yıl'] || '-' }),
+      el('td', { class: 'right', text: toNumber(fields.KM) === null ? '-' : formatNumber(toNumber(fields.KM)) }),
+      el('td', { class: 'right', text: yearly ? formatNumber(yearly[1]) : '-' }),
+      el('td', {}, damageCell(record)),
+      el('td', { class: 'right', text: tramer === undefined ? '-' : typeof tramer === 'number' ? `${formatNumber(tramer)} TL` : tramer }),
+      el('td', { class: 'right cell-price', text: formatPrice(record.price) }),
+      el('td', { class: 'right', text: comparison && comparison.priceDiff !== null ? `${comparison.priceDiff > 0 ? '+' : comparison.priceDiff < 0 ? '-' : ''}%${Math.abs(comparison.priceDiff)}` : '-' }),
+      el('td', { class: 'right' }, el('button', {
+        class: 'expand', type: 'button', icon: 'chevron', 'aria-label': 'Detayı aç veya kapat', 'aria-expanded': String(isOpen),
+        onclick: () => {
+          if (isOpen) state.expanded.delete(record.id);
+          else state.expanded.add(record.id);
+          renderVehicleRows(table);
+        }
+      }))
+    ]));
+    if (isOpen) {
+      const report = renderVehicleReport(record, state.vehicleTerms);
+      const technical = renderTechnical(record);
+      body.appendChild(el('tr', { class: 'detail-row' }, el('td', { colspan: '9' }, el('div', { class: 'detail-grid' }, [
+        el('div', { class: 'detail-fields' }, [report || el('p', { class: 'small muted', text: 'Hasar bilgisi için ilanı açıp sepete ekle.' })]),
+        el('div', { class: 'detail-fields' }, [technical, renderPhones(record)].filter(Boolean))
+      ]))));
+    }
+  });
+  $('vehicleEmpty').hidden = rows.length > 0;
+}
+
+function termsPanel() {
+  const chips = el('div', { class: 'term-chips' });
+  const save = (terms) => chrome.storage.local.set({ vehicleTerms: terms });
+  state.vehicleTerms.forEach((term) => {
+    chips.appendChild(el('span', { class: 'pill pill-neutral' }, [
+      el('span', { text: term }),
+      el('button', {
+        class: 'btn-link', type: 'button', text: '×', 'aria-label': `${term} kaldır`, style: 'margin-left: 6px; text-decoration: none',
+        onclick: () => save(state.vehicleTerms.filter((item) => item !== term))
+      })
     ]));
   });
-  view.appendChild(el('section', { class: 'panel' }, list));
+  const input = el('input', { type: 'text', placeholder: 'Örn. partikül, LPG, değişen', 'aria-label': 'Aranacak kelime', style: 'width: 240px' });
+  const add = () => {
+    const term = input.value.trim();
+    if (term && !state.vehicleTerms.includes(term)) save([...state.vehicleTerms, term]);
+  };
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') add();
+  });
+  return el('section', { class: 'panel' }, [
+    el('h2', { text: 'Açıklamada aranacak kelimeler' }),
+    el('p', { class: 'panel-note', text: 'Burada eklediğin kelimeler Araç raporunda, yan panelde ve CSV’de ayrı sütun olarak görünür.' }),
+    el('div', { class: 'btn-row', style: 'margin-bottom: 10px' }, [input, el('button', { class: 'btn', type: 'button', icon: 'plus', text: 'Ekle', onclick: add })]),
+    chips
+  ]);
+}
+
+function viewVehicles(view) {
+  const vehicles = state.records.filter(isVehicle);
+  view.appendChild(titleRow('Araç', vehicles.length === 0 ? 'Sepette araç ilanı yok' : `Sepette ${formatNumber(vehicles.length)} araç ilanı`,
+    el('button', {
+      class: 'btn btn-primary', type: 'button', icon: 'download', text: 'CSV indir', disabled: vehicles.length === 0,
+      onclick: () => downloadCsv(recordsToRows(vehicleRows(), state.hiddenColumns, context()), `sahibinden_arac_${todayIso()}.csv`)
+    })));
+  if (vehicles.length === 0) {
+    view.appendChild(el('section', { class: 'panel' }, el('p', { class: 'empty-text', text: 'Bir araç ilanını ya da listesini açıp sepete ekle. Hasar şeması ve teknik veriler için ilan sayfasından eklemek gerekir.' })));
+    view.appendChild(termsPanel());
+    return;
+  }
+
+  const groups = vehicleGroups(vehicles);
+  if (groups.length > 0) {
+    const summary = el('table', { class: 'listings' }, [
+      el('thead', {}, el('tr', {}, [
+        el('th', { text: 'Marka ve seri' }),
+        el('th', { class: 'right', text: 'İlan' }),
+        el('th', { class: 'right', text: 'En düşük' }),
+        el('th', { class: 'right', text: 'Medyan fiyat' }),
+        el('th', { class: 'right', text: 'Medyan KM' })
+      ])),
+      el('tbody', {}, groups.slice(0, 12).map((group) => el('tr', {}, [
+        el('td', { text: group.key }),
+        el('td', { class: 'right', text: formatNumber(group.count) }),
+        el('td', { class: 'right', text: group.minPrice ? `${formatNumber(group.minPrice)} ${group.currency}` : '-' }),
+        el('td', { class: 'right cell-price', text: group.medianPrice ? `${formatNumber(group.medianPrice)} ${group.currency}` : '-' }),
+        el('td', { class: 'right', text: group.medianKm ? formatNumber(group.medianKm) : '-' })
+      ])))
+    ]);
+    view.appendChild(el('section', { class: 'panel' }, [el('h2', { text: 'Seri özeti' }), el('div', { class: 'table-wrap' }, summary)]));
+  }
+
+  const table = el('table', { class: 'listings' }, [el('thead'), el('tbody')]);
+  const seriesNames = [...new Set(vehicles.map((record) => `${(record.fields || {}).Marka || ''} ${(record.fields || {}).Seri || ''}`.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'tr'));
+  const pick = (label, key, options, parse) => {
+    const select = el('select', { 'aria-label': label }, options.map(([value, text]) => el('option', { value, text })));
+    select.value = String(state.vehicleFilters[key]);
+    select.addEventListener('change', () => {
+      state.vehicleFilters[key] = parse ? parse(select.value) : select.value;
+      renderVehicleRows(table);
+    });
+    return select;
+  };
+  view.appendChild(el('section', {}, [
+    el('div', { class: 'filters', style: 'margin-bottom: 14px' }, [
+      pick('Seri', 'series', [['', 'Tüm seriler'], ...seriesNames.map((name) => [name, name])]),
+      pick('Hasar', 'damage', [['', 'Tüm hasar durumları'], ['noChanged', 'Değişeni olmayan'], ['clean', 'Boya ve değişeni olmayan']]),
+      pick('Sırala', 'sortBy', [['peer', 'Seriye göre fiyat'], ['price', 'Fiyat'], ['km', 'KM'], ['year', 'Yıl'], ['damage', 'Hasar']]),
+      pick('Yön', 'descending', [['false', 'Artan'], ['true', 'Azalan']], (value) => value === 'true')
+    ]),
+    el('div', { class: 'table-wrap' }, table),
+    el('p', { id: 'vehicleEmpty', class: 'empty-text', hidden: true, text: 'Bu filtrelere uyan araç yok. Hasar filtreleri yalnızca ilan sayfasından eklenen ilanlarda çalışır.' })
+  ]));
+  renderVehicleRows(table);
+  view.appendChild(termsPanel());
 }
 
 async function viewSearches(view) {
@@ -774,7 +923,7 @@ function backupBlock() {
       el('button', {
         class: 'btn', type: 'button', icon: 'download', text: 'Yedek indir',
         onclick: async () => {
-          const stored = await chrome.storage.local.get(['basket', 'annotations', 'savedSearches', 'hiddenColumns']);
+          const stored = await chrome.storage.local.get(['basket', 'annotations', 'savedSearches', 'hiddenColumns', 'vehicleTerms']);
           downloadJson({ app: 'ilan-veri-indirici', version: 1, savedAt: new Date().toISOString(), ...stored }, `ilan_veri_yedek_${todayIso()}.json`);
         }
       }),
@@ -840,7 +989,7 @@ async function renderView() {
   const view = $('view');
   const scroll = window.scrollY;
   const fresh = el('div', { id: 'view', class: 'view' });
-  const renderers = { basket: viewBasket, analysis: viewAnalysis, duplicates: viewDuplicates, searches: viewSearches, data: viewData, settings: viewSettings };
+  const renderers = { basket: viewBasket, analysis: viewAnalysis, vehicles: viewVehicles, searches: viewSearches, data: viewData, settings: viewSettings };
   view.replaceWith(fresh);
   await renderers[currentView()](fresh);
   window.scrollTo(0, scroll);
@@ -856,7 +1005,7 @@ function reloadAndRender() {
 }
 
 chrome.storage.onChanged.addListener((changes) => {
-  if (changes.basket || changes.features || changes.sessionFeatures || changes.savedSearches || changes.manualRates) reloadAndRender();
+  if (changes.basket || changes.features || changes.sessionFeatures || changes.savedSearches || changes.manualRates || changes.vehicleTerms) reloadAndRender();
 });
 window.addEventListener('hashchange', () => {
   state.statusText = '';

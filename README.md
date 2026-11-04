@@ -3,7 +3,7 @@
 🚀 **Profesyonel Chrome Uzantısı** - Sahibinden.com ilanlarını CSV ve JSON olarak indirin. Görselleri kaydedin. Türkçe karakter desteği ile tam uyumlu.
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Uzantı-4285F4?style=for-the-badge&logo=google-chrome&logoColor=white)](https://chrome.google.com/webstore)
-[![Version](https://img.shields.io/badge/Sürüm-1.3.0-success?style=for-the-badge)](https://github.com/your-username/sahibinden-data-exporter)
+[![Version](https://img.shields.io/badge/Sürüm-1.4.0-success?style=for-the-badge)](https://github.com/your-username/sahibinden-data-exporter)
 [![License](https://img.shields.io/badge/Lisans-MIT-blue?style=for-the-badge)](LICENSE)
 
 ## 🎯 Kimler İçin Mükemmel
@@ -42,13 +42,28 @@
 - **Other Sites**: Full image scan grouped by size and type
 - **Paced Downloads**: One file at a time, and it continues if the popup closes
 
+### Araç İlanları
+
+Araç raporu her araç ilanında çalışır, düğmesi yoktur. Yalnızca açık sayfanın zaten taşıdığı veriyi okur, siteye ek istek göndermez.
+
+- **Hasar şeması:** Değişen, boyalı ve lokal boyalı parçalar harita gibi çizilir ve sayılır.
+- **Satıcının açıklaması:** Şase, podye, direk, airbag, KM, tramer, muayene, ekspertiz ve bakım geçen cümleler satıcının kendi sözleriyle gösterilir. Eklenti bunları yorumlamaz.
+- **Kendi kelimelerin:** Çalışma alanındaki Araç bölümünden aranacak kelime ekleyebilirsin. Her kelime rapora ve CSV'ye ayrı sütun olarak girer.
+- **Teknik veriler:** Motor, yakıt, boyut ve model donanımı. Bunlar modelin genel verileridir, o araca özel olmayabilir.
+- **Araç bölümü:** Sepetteki araçlar seri özetiyle listelenir, hasara ve seriye göre fiyat farkına göre süzülür.
+- **Yan panel:** İlan sayfasında raporu, liste sayfasında aranabilir ve sıralanabilir ilan listesini gösterir.
+
+### Telefon Numaraları
+
+Satıcının açıklamaya yazdığı numaralar açıklamayla birlikte dışa aktarılır, ayrıca **Açıklamadaki Telefon** sütununa ayrılır. Sitenin şifreli tuttuğu telefon alanı okunmaz. Dışa aktardığın kişisel verilerin KVKK kapsamındaki sorumluluğu sana aittir.
+
 ### Ayarlar: İsteğe Bağlı Özellikler
 
 Temel indirme ve sepet her zaman çalışır. Aşağıdakilerin **hepsi kapalı gelir**. Açmadığın özellik çalışmaz ve hiçbir yere istek atmaz. Bir düğmeyi açınca etkisi hemen görünür, ayrı izin penceresi çıkmaz. Tema Açık başlar, Ayarlar bölümünden Koyu veya Sistem seçebilirsin.
 
 | Risk | Özellikler |
 |---|---|
-| Düşük | Canlı kurlar (dolar, euro, sterlin, gram altın), elle kur, ek ilan verisi, açıklamadan ayıklama, hesaplanan alanlar, telefon maskeleme, not/etiket/puan, filtre ve sıralama, fırsat puanı, kopya ilan bulma, grafikler, hazır sütun setleri, tablo olarak kopyalama, KML/GeoJSON, TKGM'de parseli açma, yedekleme, kayıtlı aramalar |
+| Düşük | Canlı kurlar (dolar, euro, sterlin, gram altın), elle kur, ek ilan verisi, hesaplanan alanlar, not/etiket/puan, filtre ve sıralama, fırsat puanı, grafikler, hazır sütun setleri, tablo olarak kopyalama, KML/GeoJSON, TKGM'de parseli açma, yedekleme, kayıtlı aramalar |
 | Orta | Yan panel, açtığım ilanları kaydet, gezdiğim listeleri kaydet |
 | Yüksek, **risk sana aittir** | İlanı açmadan oku, sonraki sayfaları oku, toplu fiyat geçmişi, kayıtlı aramaları arka planda kontrol et |
 
@@ -71,7 +86,7 @@ Additionally from listing pages:
 - **Description, full photo list, video flag, category path, map coordinates**
 - **Optional:** store name, license number, membership date, video and tour badges, price history
 
-Personal seller names and phone fields are never extracted. Descriptions are copied as written, so turn on phone masking if you share exports.
+Personal seller names and the phone field the site keeps encrypted are never read. Descriptions are copied as written, including any phone number the seller typed there.
 
 ## 🛠️ Installation
 
@@ -248,7 +263,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔄 Version History
 
-### v1.3.0 (Current)
+### v1.4.0 (Current)
+
+- Vehicle report on every car listing: damage diagram, seller's statements, technical data
+- Workspace Araç section with a series summary, damage filters and price against the same series
+- Redesigned side panel, with a searchable list on results pages
+- Description parsing is always on, and phone numbers written in descriptions are exported
+- Removed duplicate finding and phone masking
+
+### v1.3.0
 
 - Switches take effect immediately on every open page, with no permission prompt that closes the popup
 - TKGM button opens the listing's parcel directly on the map
