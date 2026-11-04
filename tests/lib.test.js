@@ -273,6 +273,20 @@ test('vehicles are compared with the same series, close model years first', () =
   assert.strictEqual(group.minPrice, 900);
 });
 
+test('vehicle filters keep the right cars and put missing values last', () => {
+  const car = (id, series, km, damage) => ({ id, category: ['Vasıta'], fields: { Marka: 'VW', Seri: series, KM: km }, price: { amount: 10, currency: 'TL' }, damage });
+  const clean = { changed: [], painted: [], localPainted: [], originalCount: 13, notes: [] };
+  const painted = { changed: [], painted: ['roof'], localPainted: [], originalCount: 12, notes: [] };
+  const changed = { changed: ['roof'], painted: [], localPainted: [], originalCount: 12, notes: [] };
+  const records = [car('1', 'Golf', '300', changed), car('2', 'Golf', '100', painted), car('3', 'Polo', undefined, clean), { id: '4', category: ['Emlak'], fields: {} }];
+  const ids = (filters) => lib.filterVehicles(records, filters).map((record) => record.id);
+  assert.deepStrictEqual(ids({ sortBy: 'km' }), ['2', '1', '3']);
+  assert.deepStrictEqual(ids({ sortBy: 'km', descending: true }), ['1', '2', '3']);
+  assert.deepStrictEqual(ids({ series: 'VW Golf', sortBy: 'km' }), ['2', '1']);
+  assert.deepStrictEqual(ids({ damage: 'noChanged', sortBy: 'km' }), ['2', '3']);
+  assert.deepStrictEqual(ids({ damage: 'clean', sortBy: 'km' }), ['3']);
+});
+
 test('only vehicle listings count as vehicles', () => {
   assert.ok(lib.isVehicle({ category: ['Vasıta', 'Otomobil'] }));
   assert.ok(lib.isVehicle({ fields: { KM: '5', 'Yıl': '2020' } }));

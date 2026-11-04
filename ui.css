@@ -743,6 +743,20 @@ label.field {
   box-shadow: inset 0 0 0 1px var(--damage-original-line); /* taste-skill-ignore: legend swatch outline */
 }
 
+.damage-chips {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.damage-chip {
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 700;
+  white-space: nowrap;
+  border-radius: 4px;
+}
+
 .damage-label {
   display: block;
   font-size: 12px;

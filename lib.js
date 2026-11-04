@@ -718,6 +718,44 @@ function vehicleComparison(record, records) {
   };
 }
 
+function vehicleSeriesName(record) {
+  const fields = record.fields || {};
+  return `${fields.Marka || ''} ${fields.Seri || ''}`.trim();
+}
+
+/** The vehicles in the basket after the series and damage filters, sorted. Missing values go last. */
+function filterVehicles(records, filters) {
+  const vehicles = records.filter(isVehicle);
+  const { series = '', damage = '', sortBy = 'peer', descending = false } = filters || {};
+  const passes = (record) => {
+    const counts = damageCounts(record.damage);
+    if (series && vehicleSeriesName(record) !== series) return false;
+    if (damage === 'noChanged') return !!counts && counts.changed === 0;
+    if (damage === 'clean') return !!counts && counts.changed + counts.painted + counts.localPainted === 0;
+    return true;
+  };
+  const values = {
+    peer: (record) => {
+      const comparison = vehicleComparison(record, vehicles);
+      return comparison ? comparison.priceDiff : null;
+    },
+    price: (record) => (record.price ? record.price.amount : null),
+    km: (record) => toNumber((record.fields || {}).KM),
+    year: (record) => toNumber((record.fields || {})['Yıl']),
+    damage: (record) => {
+      const counts = damageCounts(record.damage);
+      return counts ? counts.changed * 2 + counts.painted + counts.localPainted * 0.5 : null;
+    }
+  };
+  const read = values[sortBy];
+  return vehicles.filter(passes).sort((a, b) => {
+    const [first, second] = [read(a), read(b)];
+    if (first === null || first === undefined) return second === null || second === undefined ? 0 : 1;
+    if (second === null || second === undefined) return -1;
+    return descending ? second - first : first - second;
+  });
+}
+
 /** One summary row per make and series, largest group first */
 function vehicleGroups(records) {
   const groups = new Map();
@@ -1097,6 +1135,8 @@ if (typeof module !== 'undefined') {
     damageCounts,
     vehicleComparison,
     vehicleGroups,
+    vehicleSeriesName,
+    filterVehicles,
     flatTechnical,
     parseDescription,
     computedFields,

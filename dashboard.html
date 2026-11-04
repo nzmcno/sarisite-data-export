@@ -313,17 +313,6 @@
       padding: 12px 8px 0;
     }
 
-    .detail-fields {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .detail-fields input,
-    .detail-fields select {
-      width: 100%;
-    }
-
     .charts {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -431,6 +420,17 @@
       align-items: center;
       gap: 7px;
       padding: 3px 0;
+    }
+
+    .terms-row {
+      display: flex;
+      gap: 8px;
+      max-width: 420px;
+      margin: 10px 0;
+    }
+
+    .terms-row input {
+      flex: 1 1 auto;
     }
 
     .empty-text {

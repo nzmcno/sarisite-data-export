@@ -90,10 +90,15 @@ The extension requests minimal permissions necessary for functionality:
 - **Purpose**: Access Sahibinden.com pages
 - **Limitation**: Other websites are reachable only through `activeTab`, when you open the extension on them
 
-### `alarms`, `notifications`, `sidePanel`
+### `sidePanel`
 
-- **Purpose**: The saved search check and the side panel
-- **Scope**: Declared up front so that switching these features on takes effect at once. They stay unused until you turn the feature on
+- **Purpose**: The extension's main screen opens in the browser's side panel
+- **Scope**: While the panel is open, it reads the Sahibinden.com page in the active tab whenever that page changes. This stays on your device and sends the site no extra requests
+
+### `alarms`, `notifications`
+
+- **Purpose**: The saved search check
+- **Scope**: Declared up front so that switching the feature on takes effect at once. They stay unused until you turn it on
 - **Other addresses**: The extension holds no host permission for the rate services or TKGM. It calls their public addresses without cookies
 
 ## Third-Party Services

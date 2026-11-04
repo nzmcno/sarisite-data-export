@@ -22,7 +22,11 @@ function setThemeChoice(choice) {
 }
 
 applyTheme(currentThemeChoice());
+// The same page also runs as the side panel, where the browser decides the size
+if (chrome.extension.getViews({ type: 'popup' }).includes(window)) document.documentElement.classList.add('in-popup');
 // Keeps every open extension page on the same theme
 addEventListener('storage', (event) => {
   if (event.key === 'theme') applyTheme(currentThemeChoice());
+// The same page also runs as the side panel, where the browser decides the size
+if (chrome.extension.getViews({ type: 'popup' }).includes(window)) document.documentElement.classList.add('in-popup');
 });

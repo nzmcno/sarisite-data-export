@@ -428,6 +428,71 @@ function renderTechnical(record, openSet) {
   return card;
 }
 
+/** D, B and L counts for one listing, used wherever vehicles are listed */
+function renderDamageChips(record) {
+  const counts = damageCounts(record.damage);
+  if (!counts) return el('span', { class: 'small muted', text: record.hasDetail ? 'Hasar bilgisi yok' : 'İlan açılmadı' });
+  if (counts.changed + counts.painted + counts.localPainted === 0) return el('span', { class: 'pill pill-low', text: 'Hasarsız' });
+  const chip = (state, count, letter) => (count ? el('span', { class: `damage-chip damage-key-${state}`, text: `${count} ${letter}` }) : null);
+  return el('span', { class: 'damage-chips' }, [
+    chip('changed', counts.changed, 'D'),
+    chip('painted', counts.painted, 'B'),
+    chip('local', counts.localPainted, 'L')
+  ]);
+}
+
+function peerDiffText(comparison) {
+  if (!comparison || comparison.priceDiff === null) return '';
+  const { priceDiff } = comparison;
+  return `${priceDiff > 0 ? '+' : priceDiff < 0 ? '-' : ''}%${Math.abs(priceDiff)}`;
+}
+
+/** Series, damage and sort pickers. They change the filters object they are given. */
+function renderVehicleFilters(records, filters, onChange) {
+  const names = [...new Set(records.filter(isVehicle).map(vehicleSeriesName).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'tr'));
+  const pick = (label, key, options, parse) => {
+    const select = el('select', { 'aria-label': label }, options.map(([value, text]) => el('option', { value, text })));
+    select.value = String(filters[key]);
+    select.addEventListener('change', () => {
+      filters[key] = parse ? parse(select.value) : select.value;
+      onChange();
+    });
+    return select;
+  };
+  return el('div', { class: 'filters' }, [
+    pick('Seri', 'series', [['', 'Tüm seriler'], ...names.map((name) => [name, name])]),
+    pick('Hasar', 'damage', [['', 'Tüm hasarlar'], ['noChanged', 'Değişensiz'], ['clean', 'Boyasız, değişensiz']]),
+    pick('Sırala', 'sortBy', [['peer', 'Seriye göre fiyat'], ['price', 'Fiyat'], ['km', 'KM'], ['year', 'Yıl'], ['damage', 'Hasar']]),
+    pick('Yön', 'descending', [['false', 'Artan'], ['true', 'Azalan']], (value) => value === 'true')
+  ]);
+}
+
+/** Search words are saved to storage, and every open page redraws from that change */
+function renderTermsEditor(terms, className) {
+  const save = (next) => chrome.storage.local.set({ vehicleTerms: next });
+  const chips = el('div', { class: 'term-chips' }, terms.map((term) => el('span', { class: 'pill pill-neutral' }, [
+    el('span', { text: term }),
+    el('button', {
+      class: 'btn-link', type: 'button', text: '×', 'aria-label': `${term} kaldır`, style: 'margin-left: 6px; text-decoration: none',
+      onclick: () => save(terms.filter((item) => item !== term))
+    })
+  ])));
+  const input = el('input', { type: 'text', placeholder: 'Örn. partikül, LPG', 'aria-label': 'Aranacak kelime' });
+  const add = () => {
+    const term = input.value.trim();
+    if (term && !terms.includes(term)) save([...terms, term]);
+  };
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') add();
+  });
+  return el('section', { class: className }, [
+    el('h2', { text: 'Açıklamada aranacak kelimeler' }),
+    el('p', { class: 'small muted', text: 'Eklediğin her kelime Araç raporunda görünür, CSV’de ayrı sütun olur.' }),
+    el('div', { class: 'terms-row' }, [input, el('button', { class: 'btn', type: 'button', icon: 'plus', text: 'Ekle', onclick: add })]),
+    chips
+  ]);
+}
+
 /** Numbers the seller wrote in the description. The site's protected phone field is not read. */
 function renderPhones(record) {
   const phones = extractPhones(record.description);

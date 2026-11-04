@@ -32,7 +32,24 @@ const isSahibindenUrl = (url) => /^https?:\/\/([a-z0-9-]+\.)?sahibinden\.com\//i
 chrome.runtime.onInstalled.addListener(() => {
   console.log('Sahibinden İlan Veri İndirici extension installed successfully!');
   applyFeatureEffects();
+  applyActionSurface();
 });
+chrome.runtime.onStartup.addListener(applyActionSurface);
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.actionSurface) applyActionSurface();
+});
+
+/**
+ * The icon opens the side panel unless the user chose the small window. A browser only opens a
+ * side panel after a user action, so this click is as automatic as it gets.
+ */
+async function applyActionSurface() {
+  const { actionSurface = 'panel' } = await chrome.storage.local.get('actionSurface');
+  const usePopup = actionSurface === 'popup';
+  await chrome.sidePanel.setOptions({ path: 'popup.html', enabled: true });
+  await chrome.action.setPopup({ popup: usePopup ? 'popup.html' : '' });
+  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: !usePopup });
+}
 
 /**
  * ============================================================================
@@ -445,8 +462,6 @@ async function applyFeatureEffects() {
   } else {
     await chrome.alarms.clear(SAVED_SEARCH_ALARM);
   }
-  await chrome.sidePanel.setOptions({ path: 'sidepanel.html', enabled: features.sidePanel });
-  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {

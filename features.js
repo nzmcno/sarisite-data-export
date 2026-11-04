@@ -26,7 +26,6 @@ const FEATURES = [
   { id: 'backup', where: 'Veri ve yedek', group: 'workspace', risk: 'low', title: 'Yedekle ve geri yükle', desc: 'Sepeti, notları ve kayıtlı aramaları dosyaya alır, dosyadan geri yükler.' },
   { id: 'snapshots', where: 'Sayfa bölümü ve Kayıtlı aramalar', group: 'workspace', risk: 'low', title: 'Kayıtlı aramalar', desc: 'Açık liste sayfasını kaydeder. Tekrar kaydettiğinde yeni, kaybolan ve fiyatı değişen ilanları gösterir.' },
 
-  { id: 'sidePanel', where: 'Sayfa bölümü', group: 'browsing', risk: 'medium', title: 'Yan panel', desc: 'Sayfa bilgisini ve kurları sayfaya dokunmadan yan panelde gösterir.' },
   { id: 'autoSaveListings', where: 'Sepet, ilan açtıkça', group: 'browsing', risk: 'medium', title: 'Açtığım ilanları kaydet', desc: 'Açtığın her ilan sayfasını sepete ekler. Ek istek atmaz ama her ilan sayfasında kod çalıştırır.' },
   { id: 'autoAddPages', where: 'Sepet, liste açtıkça', group: 'browsing', risk: 'medium', title: 'Gezdiğim listeleri kaydet', desc: 'Açtığın her liste sayfasını sepete ekler. Ek istek atmaz ama her liste sayfasında kod çalıştırır.' },
 

@@ -6,39 +6,57 @@
   <script src="theme.js"></script>
   <link rel="stylesheet" href="ui.css">
   <style>
+    /* One page for both the side panel and the small window. Only the outer size differs. */
+    html,
     body {
+      height: 100%;
+    }
+
+    html.in-popup,
+    html.in-popup body {
       width: 420px;
-      max-height: 600px;
-      overflow-x: hidden;
+      height: 600px;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
 
     .shell-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      padding: 12px 14px 10px;
+      gap: 8px;
+      padding: 10px 12px 8px;
       background: var(--surface);
     }
 
+    .shell-actions {
+      display: flex;
+      gap: 6px;
+      flex: none;
+    }
+
     .tabs {
-      position: sticky;
-      top: 0;
-      z-index: 2;
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      padding: 0 6px;
+      flex: none;
+      display: flex;
+      padding: 0 4px;
+      overflow-x: auto;
+      scrollbar-width: none;
       background: var(--surface);
       border-bottom: 1px solid var(--border);
     }
 
     .tab-button {
-      position: relative;
+      flex: 1 0 auto;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 4px;
       height: 36px;
+      padding: 0 7px;
       font: inherit;
       font-size: 12px;
       font-weight: 550;
@@ -76,7 +94,10 @@
 
     .tab-content {
       display: none;
-      padding: 12px 14px 14px;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 10px 12px 14px;
     }
 
     .tab-content.active {
@@ -85,29 +106,51 @@
       gap: 10px;
     }
 
-    .lead {
+    .tab-content > * {
+      flex: none;
+    }
+
+    .page-main {
       display: flex;
       flex-direction: column;
       gap: 10px;
     }
 
-    .lead-top {
+    .action-bar {
+      flex: none;
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
+      gap: 6px;
+      padding: 10px 12px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
     }
 
-    .lead-title {
+    .action-bar .btn-primary {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .crumb {
+      font-size: 11px;
+      line-height: 14px;
+      color: var(--muted);
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .hero-title {
+      margin-top: 3px;
       font-size: 13px;
       line-height: 18px;
-      font-weight: 550;
+      font-weight: 600;
       display: -webkit-box;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
     }
 
+    .hero-figure,
     .lead-figure {
       font-size: 28px;
       line-height: 32px;
@@ -116,6 +159,11 @@
       letter-spacing: -0.025em;
     }
 
+    .hero-figure {
+      margin-top: 6px;
+    }
+
+    .hero-note,
     .lead-caption {
       margin-top: 2px;
       font-size: 12px;
@@ -123,8 +171,209 @@
       color: var(--muted);
     }
 
-    .tools:empty {
-      display: none;
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 10px;
+    }
+
+    .hero-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 8px;
+    }
+
+    .lead {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .rates-cells {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .rates-cell:nth-child(3) {
+      border-left: none;
+    }
+
+    .rates-cell:nth-child(n + 3) {
+      border-top: 1px solid var(--accent-track);
+    }
+
+    .list-tools {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .list-tools input {
+      width: 100%;
+    }
+
+    .row-list {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .list-row {
+      border-top: 1px solid var(--rule);
+    }
+
+    .list-row-main {
+      display: grid;
+      grid-template-columns: 52px minmax(0, 1fr) 28px;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 0;
+    }
+
+    .list-thumb {
+      width: 52px;
+      height: 40px;
+      object-fit: cover;
+      border-radius: 5px;
+      background: var(--raised);
+      display: block;
+    }
+
+    .list-title {
+      display: block;
+      font-size: 12px;
+      line-height: 16px;
+      font-weight: 550;
+      color: var(--text);
+      text-decoration: none;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .list-title:hover {
+      color: var(--accent-ink);
+      text-decoration: underline;
+    }
+
+    .list-price {
+      font-size: 13px;
+      line-height: 18px;
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .list-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 2px 6px;
+      font-size: 11px;
+      line-height: 14px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .expand {
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      background: none;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .expand:hover {
+      background: var(--active);
+      color: var(--text);
+    }
+
+    .expand[aria-expanded="true"] .icon {
+      transform: rotate(180deg);
+    }
+
+    .list-row-detail {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 0 0 12px;
+    }
+
+    .list-row-detail .card {
+      padding: 10px;
+      background: var(--raised);
+    }
+
+    .state {
+      padding: 32px 16px;
+      text-align: center;
+    }
+
+    .state h2 {
+      font-size: 14px;
+      line-height: 20px;
+      margin-bottom: 4px;
+    }
+
+    .link-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 12px;
+    }
+
+    .description-text {
+      font-size: 12px;
+      line-height: 18px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .series-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 7px 0;
+      font-size: 12px;
+      line-height: 16px;
+      border-top: 1px solid var(--rule);
+    }
+
+    .series-row:first-child {
+      padding-top: 0;
+      border-top: none;
+    }
+
+    .series-figures {
+      flex: none;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .filters select {
+      width: 100%;
+    }
+
+    .terms-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px;
+      margin: 8px 0;
+    }
+
+    .terms-row input {
+      width: 100%;
     }
 
     .image-group {
@@ -144,7 +393,7 @@
 
     .image-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
       gap: 6px;
     }
 
@@ -199,8 +448,6 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
-      max-height: 340px;
-      overflow-y: auto;
     }
 
     .empty-text {
@@ -248,11 +495,20 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .setting-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      font-weight: 600;
     }
 
     .status-line {
-      position: sticky;
-      bottom: 0;
       padding: 8px 10px;
       font-size: 12px;
       line-height: 16px;
@@ -266,6 +522,20 @@
     .status-line:empty {
       display: none;
     }
+
+    @media (max-width: 340px) {
+      .shell-actions .btn-label {
+        display: none;
+      }
+
+      .vehicle-damage {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .car-diagram {
+        max-width: 112px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -273,11 +543,15 @@
     <div class="brand" data-brand-mark>
       <h1 class="brand-name">İlan Veri İndirici</h1>
     </div>
-    <button id="openWorkspaceBtn" class="btn" type="button" data-icon="open">Çalışma alanı</button>
+    <div class="shell-actions">
+      <button id="openPanelBtn" class="btn btn-icon" type="button" data-icon="panel" title="Yan panelde aç" aria-label="Yan panelde aç" hidden></button>
+      <button id="openWorkspaceBtn" class="btn" type="button" data-icon="open" title="Çalışma alanını aç" aria-label="Çalışma alanını aç"><span class="btn-label">Çalışma alanı</span></button>
+    </div>
   </header>
 
   <nav class="tabs" role="tablist" aria-label="Bölümler">
     <button class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="csv-tab" data-tab="csv">Sayfa</button>
+    <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="vehicles-tab" data-tab="vehicles">Araç</button>
     <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="images-tab" data-tab="images">Görsel</button>
     <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="basket-tab" data-tab="basket">Sepet<span id="basketCount" class="tab-count" hidden></span></button>
     <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="experimental-tab" data-tab="experimental">Deneysel</button>
@@ -286,21 +560,13 @@
 
   <!-- Current Page Tab -->
   <section id="csv-tab" class="tab-content active" role="tabpanel">
-    <div class="card lead">
-      <div id="pageLead"></div>
-      <div id="pageRates"></div>
-      <button id="enableRatesBtn" class="btn-link" type="button" hidden>Dolar, euro, sterlin ve gram altın olarak göster</button>
-      <button id="downloadCsvBtn" class="btn btn-primary btn-large" type="button" data-icon="download">CSV indir</button>
-      <div class="btn-row">
-        <button id="addPageBtn" class="btn btn-grow" type="button" data-icon="plus">Sepete ekle</button>
-        <button id="downloadJsonBtn" class="btn" type="button" data-icon="braces">JSON</button>
-      </div>
-      <div id="pageTools" class="btn-row tools"></div>
-    </div>
     <p id="pageMessage" class="status-line" role="status"></p>
-    <div id="pageVehicle" hidden></div>
-    <div id="pageInsights" class="card" hidden></div>
-    <div id="pageStats" class="card" hidden></div>
+    <div id="pageMain" class="page-main"></div>
+  </section>
+
+  <!-- Vehicles Tab -->
+  <section id="vehicles-tab" class="tab-content" role="tabpanel">
+    <div id="vehicleBoard" class="page-main"></div>
   </section>
 
   <!-- Images Tab -->
@@ -351,9 +617,15 @@
       <div id="themePicker"></div>
       <button id="allOffBtn" class="btn" type="button">Hepsini kapat</button>
     </div>
+    <div class="setting-line">
+      <span>Simgeye tıklayınca</span>
+      <div id="surfacePicker"></div>
+    </div>
     <p id="settingsMessage" class="status-line" role="status"></p>
     <div id="featureList"></div>
   </section>
+
+  <footer id="pageActions" class="action-bar" hidden></footer>
 
   <script src="features.js"></script>
   <script src="lib.js"></script>

@@ -1,20 +1,38 @@
-// popup.js - Sahibinden CSV Exporter popup
+// popup.js - The extension's main screen, in the side panel and in the small window alike.
 // The page is only read (see extractor.js). Files are built here, so nothing is added to the page.
 
-let currentTab = null;
-let currentPage = null;
-let features = normalizeFeatures({});
-let ratesResult = { status: 'off', rates: null };
+const app = {
+  run: 0,
+  tab: null,
+  url: '',
+  page: null,
+  loading: false,
+  features: normalizeFeatures({}),
+  basket: {},
+  terms: [],
+  ratesResult: { status: 'off', rates: null },
+  search: '',
+  sort: 'page',
+  expanded: new Set(),
+  openFolds: new Set(),
+  vehicleFilters: { series: '', damage: '', sortBy: 'peer', descending: false },
+  vehicleExpanded: new Set()
+};
+
+const QUICK_FACTS = ['Yıl', 'KM', 'Yakıt / Motor Tipi', 'Vites', 'Motor Gücü', 'Renk', 'm² (Brüt)', 'm²', 'Oda Sayısı', 'Bina Yaşı', 'Bulunduğu Kat', 'İmar Durumu'];
+const isSahibinden = (url) => /^https?:\/\/([a-z0-9-]+\.)?sahibinden\.com\//i.test(url || '');
+const inPopup = () => document.documentElement.classList.contains('in-popup');
 
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab;
 }
 
+/** Reads the open page again right before an export, so the file matches what is on screen */
 async function readPage() {
-  currentTab = await getActiveTab();
-  currentPage = await runInTab(currentTab.id, 'extractPage');
-  return currentPage;
+  app.tab = await getActiveTab();
+  app.page = await runInTab(app.tab.id, 'extractPage');
+  return app.page;
 }
 
 function pageProblem(page) {
@@ -26,138 +44,358 @@ function pageProblem(page) {
   return '';
 }
 
-const pageRecords = (page) => page.rows.map((row) => listRowToRecord(row, page));
+const setPageMessage = (text) => { $('pageMessage').textContent = text; };
 
 /**
  * ============================================================================
- * TAB NAVIGATION AND PAGE STATE
+ * START AND LIVE UPDATES
  * ============================================================================
  */
+function selectTab(button) {
+  document.querySelectorAll('.tab-button').forEach((other) => {
+    other.classList.toggle('active', other === button);
+    other.setAttribute('aria-selected', String(other === button));
+  });
+  document.querySelectorAll('.tab-content').forEach((content) => content.classList.remove('active'));
+  $(`${button.getAttribute('data-tab')}-tab`).classList.add('active');
+  drawActions();
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   hydrateBrand();
   hydrateIcons();
   renderThemePicker($('themePicker'));
+  renderSurfacePicker();
   document.querySelectorAll('.tab-button').forEach((button) => {
-    button.addEventListener('click', () => {
-      document.querySelectorAll('.tab-button').forEach((other) => {
-        other.classList.toggle('active', other === button);
-        other.setAttribute('aria-selected', String(other === button));
-      });
-      document.querySelectorAll('.tab-content').forEach((content) => content.classList.remove('active'));
-      $(`${button.getAttribute('data-tab')}-tab`).classList.add('active');
-    });
+    button.addEventListener('click', () => selectTab(button));
   });
-  features = await loadFeatures();
+  $('openPanelBtn').hidden = !inPopup();
+  app.features = await loadFeatures();
   renderFeatureList();
-  await refreshPageState();
-  renderBasket();
+  await refresh(true);
   refreshGuarded();
-  refreshRates(false);
   onFeaturesChanged(applyFeatureChange);
+  chrome.tabs.onActivated.addListener(() => refresh(true));
+  chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
+    if ((change.status === 'complete' || change.status === 'loading') && tab.active) refresh(change.status === 'complete');
+  });
 });
 
 /** A switch changed here or in the workspace: redraw everything it affects right away */
 async function applyFeatureChange() {
-  const before = features;
-  features = await loadFeatures();
+  app.features = await loadFeatures();
   renderFeatureList();
-  await refreshPageState();
-  refreshRates(features.liveRates && !before.liveRates);
+  await refresh(false);
   refreshGuarded();
 }
 
-let pageRefreshRun = 0;
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.imageProgress) {
+    const { done, total, errorCount } = changes.imageProgress.newValue;
+    const errors = errorCount > 0 ? `, ${errorCount} hata` : '';
+    $('imageStats').textContent = done === total
+      ? `İndirme bitti: ${total - errorCount}/${total}${errors}`
+      : `İndiriliyor: ${done}/${total}${errors}. Pencereyi kapatsan da devam eder.`;
+  }
+  if (changes.basket || changes.vehicleTerms || changes.manualRates) refresh(false);
+  if (changes.actionSurface) renderSurfacePicker();
+  if (changes.guardedState) refreshGuarded();
+});
 
-async function refreshPageState() {
-  const run = ++pageRefreshRun;
-  const lead = $('pageLead');
-  const disable = (disabled) => {
-    ['downloadCsvBtn', 'downloadJsonBtn', 'addPageBtn'].forEach((id) => { $(id).disabled = disabled; });
-  };
-  const clear = () => {
-    lead.textContent = '';
-    $('pageStats').hidden = true;
-    $('pageInsights').hidden = true;
-    $('pageVehicle').hidden = true;
-    $('pageVehicle').textContent = '';
-  };
-  try {
-    const page = await readPage();
-    const terms = await loadVehicleTerms();
-    if (run !== pageRefreshRun) return;
-    clear();
-    const problem = pageProblem(page);
-    disable(!!problem);
-    if (problem) {
-      lead.appendChild(el('div', { class: 'notice', icon: 'alert' }, el('span', { text: problem })));
-    } else if (page.pageType === 'detail') {
-      const { listing } = page;
-      lead.append(
-        el('p', { class: 'lead-title', text: listing.title }),
-        el('p', { class: 'lead-figure', text: formatPrice(listing.price) }),
-        el('p', { class: 'lead-caption', text: `${listing.location.raw} · ${Object.keys(listing.attributes).length} bilgi, ${listing.photos.length} fotoğraf` })
-      );
-      renderPageInsights(listing);
-      const report = renderVehicleReport(detailToRecord(listing), terms);
-      if (report) {
-        $('pageVehicle').appendChild(report);
-        $('pageVehicle').hidden = false;
-      }
-    } else {
-      const records = pageRecords(page);
-      const medianPrice = pageMedianPrice(records);
-      const scope = page.total ? `Bu sayfada ${page.rows.length} ilan, aramada ${formatNumber(page.total)}` : `Bu sayfada ${page.rows.length} ilan`;
-      lead.append(
-        el('p', { class: 'lead-title', text: (page.category || []).slice(-3).join(' › ') || 'Arama sonuçları' }),
-        medianPrice ? el('p', { class: 'lead-figure', text: formatPrice(medianPrice) }) : null,
-        el('p', { class: 'lead-caption', text: medianPrice ? `Medyan fiyat · ${scope}` : scope })
-      );
-      renderStats($('pageStats'), records);
-      $('pageStats').hidden = $('pageStats').childElementCount === 0;
+/** readAgain reads the open page. Without it, a basket or switch change redraws from the last read. */
+async function refresh(readAgain) {
+  const run = ++app.run;
+  const tab = await getActiveTab();
+  const stored = await chrome.storage.local.get(['basket', 'vehicleTerms']);
+  const features = await loadFeatures();
+  if (run !== app.run) return;
+  app.features = features;
+  app.basket = stored.basket || {};
+  app.terms = stored.vehicleTerms || [];
+
+  const urlChanged = ((tab && tab.url) || '') !== app.url || (tab && app.tab && tab.id !== app.tab.id);
+  app.tab = tab;
+  app.loading = !!tab && isSahibinden(tab.url) && tab.status !== 'complete';
+  if (urlChanged) resetForNewPage(tab);
+  if (!tab || !isSahibinden(tab.url) || app.loading) {
+    app.page = null;
+  } else if (readAgain || !app.page) {
+    let page;
+    try {
+      page = await runInTab(tab.id, 'extractPage');
+    } catch (error) {
+      page = { pageType: 'unreadable' };
     }
-    renderPageTools(page, problem);
+    if (run !== app.run) return;
+    app.page = page;
+  }
+
+  try {
+    app.ratesResult = await loadRates(features, false);
   } catch (error) {
-    if (run !== pageRefreshRun) return;
-    clear();
-    disable(true);
-    lead.appendChild(el('div', { class: 'notice', icon: 'alert' }, el('span', { text: 'Bu sayfa okunamadı. Sayfayı yenileyip tekrar dene.' })));
-    renderPageTools({ pageType: 'other' }, 'unreadable');
+    app.ratesResult = { status: 'error', rates: null };
   }
+  if (run !== app.run) return;
+  drawPage();
+  drawVehicles();
+  renderBasket();
 }
 
-function renderPageInsights(listing) {
-  const holder = $('pageInsights');
-  holder.textContent = '';
-  const facts = listingInsights(detailToRecord(listing), features, { now: Date.now() });
-  holder.hidden = facts.length === 0;
-  if (facts.length > 0) holder.append(el('h2', { class: 'card-title', text: 'Bu ilan hakkında' }), renderFacts(facts));
+function resetForNewPage(tab) {
+  app.url = (tab && tab.url) || '';
+  app.expanded.clear();
+  app.search = '';
+  setPageMessage('');
+  $('imageResults').hidden = true;
+  $('emptyState').hidden = false;
+  $('emptyState').textContent = 'İlan sayfasında tüm fotoğraflar, liste sayfasında ilan görselleri gelir.';
 }
 
-function renderPageTools(page, problem) {
-  const tools = $('pageTools');
-  tools.textContent = '';
-  if (features.sidePanel) {
-    tools.appendChild(el('button', {
-      class: 'btn', type: 'button', icon: 'panel', text: 'Yan panel',
-      onclick: () => {
-        chrome.sidePanel.open({ windowId: currentTab.windowId });
-        window.close();
-      }
+/**
+ * ============================================================================
+ * PAGE TAB
+ * ============================================================================
+ */
+function drawPage() {
+  const { page } = app;
+  const host = $('pageMain');
+  const scroll = $('csv-tab').scrollTop;
+  let parts;
+  if (app.loading) {
+    parts = stateBlock('Sayfa yükleniyor', 'Yüklenince rapor burada belirir.');
+  } else if (!page) {
+    parts = stateBlock('Bir sahibinden sayfası aç', 'Liste veya ilan sayfasına geçince rapor burada kendiliğinden belirir.');
+  } else if (page.pageType === 'unreadable') {
+    parts = stateBlock('Bu sayfa okunamadı', 'Sayfayı yenileyip tekrar dene.');
+  } else if (pageProblem(page)) {
+    parts = [el('div', { class: 'notice', icon: 'alert' }, el('span', { text: pageProblem(page) }))];
+  } else {
+    parts = page.pageType === 'detail' ? detailView(page) : listView(page);
+  }
+  host.replaceChildren(...parts.filter(Boolean));
+  $('csv-tab').scrollTop = scroll;
+  drawActions();
+}
+
+function stateBlock(title, text) {
+  return [el('div', { class: 'state' }, [el('h2', { text: title }), el('p', { class: 'small muted', text })])];
+}
+
+function ratesBlock(price) {
+  if (!price) return null;
+  const holder = el('div');
+  const { features } = app;
+  if (!features.liveRates && !features.manualRates) {
+    holder.appendChild(el('button', {
+      class: 'btn-link', type: 'button', text: 'Dolar, euro, sterlin ve gram altın olarak göster',
+      onclick: () => setFeature(getFeature('liveRates'), true)
     }));
+    return holder;
   }
-  if (problem) return;
-  if (features.snapshots && page.pageType === 'list') {
-    tools.appendChild(el('button', { class: 'btn', type: 'button', icon: 'bookmark', text: 'Aramayı kaydet', onclick: saveSearch }));
-  }
-  if (features.tkgm && page.pageType === 'detail') {
-    const { attributes, location: place } = page.listing;
-    const parcel = parcelFromFields(attributes);
-    tools.appendChild(el('button', {
+  renderRatesStrip(holder, price, app.ratesResult, async () => {
+    app.ratesResult = await loadRates(features, true).catch(() => app.ratesResult);
+    drawPage();
+    drawVehicles();
+  });
+  return holder;
+}
+
+function detailView(page) {
+  const { listing } = page;
+  const record = detailToRecord(listing);
+  const saved = app.basket[record.id];
+  const history = saved ? saved.priceHistory || [] : [];
+  const last = history[history.length - 1];
+  const others = Object.values(app.basket);
+  const facts = QUICK_FACTS.filter((name) => record.fields[name]).slice(0, 6);
+  const chip = (name) => {
+    if (name === 'KM') return `${formatNumber(toNumber(record.fields.KM))} km`;
+    if (name === 'Yıl') return record.fields[name];
+    return `${name.replace(/ \/.*$/, '')}: ${record.fields[name]}`;
+  };
+
+  const hero = el('section', { class: 'card' }, [
+    el('p', { class: 'crumb', text: (listing.category || []).join(' › ') }),
+    el('h2', { class: 'hero-title', text: listing.title }),
+    el('p', { class: 'hero-figure', text: formatPrice(listing.price) }),
+    el('p', { class: 'hero-note', text: listing.location.raw }),
+    last ? el('p', { class: 'hero-note', text: `Önceki fiyat ${formatNumber(last.amount)} ${last.currency}` }) : null,
+    facts.length > 0 ? el('div', { class: 'chips' }, facts.map((name) => el('span', { class: 'pill pill-neutral num', text: chip(name) }))) : null,
+    saved ? el('div', { class: 'hero-tags' }, el('span', { class: 'pill pill-accent', text: 'Sepette' })) : null
+  ]);
+
+  const vehicle = isVehicle(record);
+  const comparison = vehicle ? vehicleComparison(record, others) : null;
+  const insights = listingInsights(record, app.features, { ...basketContext(others, Date.now()), now: Date.now() });
+  const parcel = parcelFromFields(listing.attributes);
+  const links = el('div', { class: 'link-row' }, [
+    app.features.tkgm ? el('button', {
       class: 'btn', type: 'button', icon: 'map', text: 'Parseli TKGM’de aç', disabled: !parcel,
       title: parcel ? `Ada ${parcel.ada}, Parsel ${parcel.parsel}` : 'Bu ilanda ada ve parsel bilgisi yok',
-      onclick: () => openTkgmParcel(place, parcel, (text) => { $('pageMessage').textContent = text; })
+      onclick: () => openTkgmParcel(listing.location, parcel, setPageMessage)
+    }) : null,
+    vehicle && listing.id ? el('a', {
+      href: `https://x.com/search?q=${encodeURIComponent(`#${listing.id}`)}`, target: '_blank', rel: 'noopener', text: 'X’te bu ilanı ara'
+    }) : null
+  ]);
+
+  return [
+    hero,
+    ratesBlock(listing.price),
+    comparison ? renderPeerComparison(comparison) : null,
+    renderVehicleReport(record, app.terms),
+    renderPhones(record),
+    insights.length > 0 ? el('section', { class: 'card', id: 'pageInsights' }, [el('h2', { class: 'card-title', text: 'Bu ilan hakkında' }), renderFacts(insights)]) : null,
+    app.features.notesTags ? el('section', { class: 'card' }, [el('h2', { class: 'card-title', text: 'Notların' }), renderNoteEditor(record.id)]) : null,
+    renderTechnical(record, app.openFolds),
+    descriptionFold(record),
+    links.childElementCount > 0 ? links : null
+  ];
+}
+
+function descriptionFold(record) {
+  if (!record.description) return null;
+  const fold = el('details', { class: 'fold' }, [
+    el('summary', { text: 'İlan açıklaması' }),
+    el('p', { class: 'description-text', text: record.description })
+  ]);
+  if (app.openFolds.has('description')) fold.open = true;
+  fold.addEventListener('toggle', () => {
+    if (fold.open) app.openFolds.add('description');
+    else app.openFolds.delete('description');
+  });
+  return el('section', { class: 'card', style: 'padding-top: 4px; padding-bottom: 4px' }, fold);
+}
+
+function listRows(page, records) {
+  const needle = app.search.trim().toLocaleLowerCase('tr');
+  const pairs = page.rows.map((row, index) => ({ row, record: records[index] }));
+  const matching = needle
+    ? pairs.filter(({ record }) => `${record.title} ${record.id} ${record.location}`.toLocaleLowerCase('tr').includes(needle))
+    : pairs;
+  const price = ({ record }) => (record.price && record.price.amount) || null;
+  const km = ({ record }) => toNumber((record.fields || {}).KM);
+  const missingLast = (read, direction) => (a, b) => {
+    const [first, second] = [read(a), read(b)];
+    if (first === null) return second === null ? 0 : 1;
+    if (second === null) return -1;
+    return (first - second) * direction;
+  };
+  const sorters = { priceUp: missingLast(price, 1), priceDown: missingLast(price, -1), km: missingLast(km, 1) };
+  return app.sort === 'page' ? matching : [...matching].sort(sorters[app.sort]);
+}
+
+function listView(page) {
+  const records = page.rows.map((row) => listRowToRecord(row, page));
+  const medianPrice = pageMedianPrice(records);
+  const hero = el('section', { class: 'card' }, [
+    el('p', { class: 'crumb', text: (page.category || []).join(' › ') || 'Arama sonuçları' }),
+    medianPrice ? el('p', { class: 'hero-figure', text: formatPrice(medianPrice) }) : null,
+    el('p', { class: 'hero-note', text: `${medianPrice ? 'Medyan fiyat · ' : ''}Bu sayfada ${page.rows.length} ilan${page.total ? `, aramada ${formatNumber(page.total)}` : ''}` }),
+    app.features.snapshots ? el('div', { class: 'hero-tags' }, el('button', { class: 'btn', type: 'button', icon: 'bookmark', text: 'Aramayı kaydet', onclick: saveSearch })) : null
+  ]);
+
+  const statsHolder = el('div');
+  renderStats(statsHolder, records);
+  const statsCard = statsHolder.childElementCount > 0 ? el('section', { class: 'card' }, [el('h2', { class: 'card-title', text: 'Bu sayfanın özeti' }), statsHolder]) : null;
+
+  const rowsHost = el('div', { class: 'row-list' });
+  const drawRows = () => {
+    const shown = listRows(page, records);
+    rowsHost.replaceChildren(...shown.map((item) => listRow(page, item.row, item.record, medianPrice)));
+    if (shown.length === 0) rowsHost.appendChild(el('p', { class: 'small muted', text: 'Aramana uyan ilan yok.', style: 'padding: 12px 0' }));
+  };
+  const search = el('input', { type: 'search', placeholder: 'Bu sayfada ara', 'aria-label': 'Bu sayfada ara' });
+  search.value = app.search;
+  search.addEventListener('input', () => {
+    app.search = search.value;
+    drawRows();
+  });
+  const sort = el('select', { 'aria-label': 'Sırala' }, [
+    ['page', 'Sayfa sırası'], ['priceUp', 'Fiyat artan'], ['priceDown', 'Fiyat azalan'], ['km', 'KM artan']
+  ].map(([value, text]) => el('option', { value, text })));
+  sort.value = app.sort;
+  sort.addEventListener('change', () => {
+    app.sort = sort.value;
+    drawRows();
+  });
+  drawRows();
+
+  return [
+    hero,
+    ratesBlock(medianPrice),
+    statsCard,
+    el('section', { class: 'card' }, [el('div', { class: 'list-tools' }, [search, sort]), rowsHost])
+  ];
+}
+
+function listRow(page, row, record, medianPrice) {
+  const saved = app.basket[record.id];
+  const isOpen = app.expanded.has(record.id);
+  const fields = record.fields || {};
+  const diff = medianPrice && record.price && record.price.amount && record.price.currency === medianPrice.currency
+    ? Math.round(((record.price.amount - medianPrice.amount) / medianPrice.amount) * 100)
+    : null;
+  const counts = saved ? damageCounts(saved.damage) : null;
+  const meta = [
+    fields['Yıl'],
+    toNumber(fields.KM) !== null ? `${formatNumber(toNumber(fields.KM))} km` : fields['m² (Brüt)'] ? `${fields['m² (Brüt)']} m²` : fields['m²'] ? `${fields['m²']} m²` : null,
+    diff === null || diff === 0 ? null : `Medyandan %${Math.abs(diff)} ${diff < 0 ? 'düşük' : 'yüksek'}`,
+    counts ? `${counts.changed} D, ${counts.painted} B, ${counts.localPainted} L` : null,
+    saved ? 'Sepette' : null
+  ].filter(Boolean);
+
+  const holder = el('div', { class: 'list-row' }, el('div', { class: 'list-row-main' }, [
+    record.image ? el('img', { class: 'list-thumb', src: record.image, alt: '', loading: 'lazy' }) : el('div', { class: 'list-thumb' }),
+    el('div', { style: 'min-width: 0' }, [
+      el('a', { class: 'list-title', href: record.url, target: '_blank', rel: 'noopener', text: record.title, title: record.title }),
+      el('div', { class: 'list-price', text: formatPrice(record.price) }),
+      el('div', { class: 'list-meta' }, meta.map((text) => el('span', { text })))
+    ]),
+    expandButton(isOpen, () => {
+      if (isOpen) app.expanded.delete(record.id);
+      else app.expanded.add(record.id);
+      drawPage();
+    })
+  ]));
+  if (isOpen) holder.appendChild(listRowDetail(page, row, record));
+  return holder;
+}
+
+function expandButton(isOpen, onclick) {
+  return el('button', {
+    class: 'expand', type: 'button', icon: 'chevron', 'aria-label': 'Ayrıntıyı aç veya kapat', 'aria-expanded': String(isOpen), onclick
+  });
+}
+
+function listRowDetail(page, row, record) {
+  const saved = app.basket[record.id];
+  const parts = [];
+  if (saved && saved.hasDetail) {
+    parts.push(renderVehicleReport(saved, app.terms), renderPhones(saved));
+    const comparison = isVehicle(saved) ? vehicleComparison(saved, Object.values(app.basket)) : null;
+    if (comparison) parts.push(renderPeerComparison(comparison));
+  } else if (app.features.readWithoutOpening) {
+    parts.push(el('button', {
+      class: 'btn', type: 'button', icon: 'search', text: 'Açmadan oku (yüksek risk)',
+      title: 'Siteye 1 istek gönderir ve günlük sınıra sayılır',
+      onclick: async (event) => {
+        event.currentTarget.disabled = true;
+        setPageMessage('İlan okunuyor...');
+        const result = await chrome.runtime.sendMessage({ action: 'enrich-start', data: { tabId: app.tab.id, listings: [{ id: record.id, url: record.url }] } });
+        setPageMessage(result.status === 'error' ? result.error : 'İstek gönderildi. Sonuç gelince burada görünür.');
+      }
+    }));
+  } else {
+    parts.push(el('p', { class: 'small muted', text: 'Hasar ve teknik bilgi ilan sayfasındadır. İlanı açıp sepete eklersen burada da görünür. Açmadan okumak Ayarlar’daki yüksek riskli bir özelliktir.' }));
+  }
+  if (!saved) {
+    parts.push(el('button', {
+      class: 'btn', type: 'button', icon: 'plus', text: 'Bu ilanı sepete ekle',
+      onclick: () => chrome.runtime.sendMessage({ action: 'basket-add-page', data: { page: { ...page, rows: [row] } } })
     }));
   }
+  return el('div', { class: 'list-row-detail' }, parts.filter(Boolean));
 }
 
 async function saveSearch() {
@@ -170,85 +408,178 @@ async function saveSearch() {
     const diff = savedSearches[key] ? diffSnapshots(savedSearches[key], current) : null;
     savedSearches[key] = { ...current, lastDiff: diff };
     await chrome.storage.local.set({ savedSearches });
-    $('pageMessage').textContent = diff
+    setPageMessage(diff
       ? `Son kayda göre ${diff.added.length} yeni, ${diff.missing.length} görünmeyen, ${diff.priceChanged.length} fiyatı değişen ilan.`
-      : 'Arama kaydedildi. Bir sonraki kayıtta farkları gösterir.';
+      : 'Arama kaydedildi. Bir sonraki kayıtta farkları gösterir.');
   } catch (error) {
-    $('pageMessage').textContent = 'Arama kaydedilemedi.';
+    setPageMessage('Arama kaydedilemedi.');
   }
 }
 
 /**
  * ============================================================================
- * LIVE RATES
- * ============================================================================
- * The rate services are contacted only while the switch is on
- */
-async function refreshRates(force) {
-  const enable = $('enableRatesBtn');
-  enable.hidden = features.liveRates || features.manualRates || !currentPage || !!pageProblem(currentPage);
-  try {
-    ratesResult = await loadRates(features, force);
-  } catch (error) {
-    ratesResult = { status: 'error', rates: null };
-  }
-  const price = !currentPage || pageProblem(currentPage)
-    ? null
-    : currentPage.pageType === 'detail'
-      ? currentPage.listing.price
-      : pageMedianPrice(pageRecords(currentPage));
-  const strip = $('pageRates');
-  if (price && ratesResult.status !== 'off') renderRatesStrip(strip, price, ratesResult, () => refreshRates(true));
-  else strip.textContent = '';
-}
-
-$('enableRatesBtn').addEventListener('click', () => setFeature(getFeature('liveRates'), true));
-
-/**
- * ============================================================================
- * CURRENT PAGE EXPORT
+ * PAGE EXPORT BAR
  * ============================================================================
  */
 async function withFreshPage(action) {
-  const message = $('pageMessage');
   try {
     const page = await readPage();
     const problem = pageProblem(page);
     if (problem) {
-      message.textContent = problem;
+      setPageMessage(problem);
       return;
     }
     await action(page);
   } catch (error) {
     console.error('Error reading page:', error);
-    message.textContent = 'Veri okunamadı. Sayfayı yenileyip tekrar dene.';
+    setPageMessage('Veri okunamadı. Sayfayı yenileyip tekrar dene.');
   }
 }
 
-$('downloadCsvBtn').addEventListener('click', () => withFreshPage(async (page) => {
-  const context = await exportContext(features, ratesResult.rates);
-  const rows = page.pageType === 'list'
-    ? listPageToRows(page, context)
-    : recordsToRows([{ ...detailToRecord(page.listing), priceHistory: [] }], [], context);
-  downloadCsv(rows, exportFileName(page, 'csv', todayIso()));
-  $('pageMessage').textContent = page.pageType === 'list' ? `${page.rows.length} ilan indirildi.` : 'İlan indirildi.';
-}));
-
-$('downloadJsonBtn').addEventListener('click', () => withFreshPage(async (page) => {
-  downloadJson(page, exportFileName(page, 'json', todayIso()));
-  $('pageMessage').textContent = 'JSON indirildi.';
-}));
-
-$('addPageBtn').addEventListener('click', () => withFreshPage(async (page) => {
-  const result = await chrome.runtime.sendMessage({ action: 'basket-add-page', data: { page } });
-  if (result.status !== 'success') {
-    $('pageMessage').textContent = 'Sepete eklenemedi.';
+function drawActions() {
+  const bar = $('pageActions');
+  const { page } = app;
+  const usable = page && page.pageType !== 'unreadable' && !pageProblem(page);
+  bar.hidden = !usable || !$('csv-tab').classList.contains('active');
+  if (bar.hidden) {
+    bar.textContent = '';
     return;
   }
-  const { counts } = result;
-  $('pageMessage').textContent = `Sepet: ${counts.new} yeni, ${counts.updated} güncellendi, ${counts.priceChanged} fiyatı değişti.`;
-  renderBasket();
-}));
+  bar.replaceChildren(
+    el('button', {
+      id: 'downloadCsvBtn', class: 'btn btn-primary', type: 'button', icon: 'download', text: 'CSV indir',
+      onclick: () => withFreshPage(async (fresh) => {
+        const context = await exportContext(app.features, app.ratesResult.rates);
+        const rows = fresh.pageType === 'list'
+          ? listPageToRows(fresh, context)
+          : recordsToRows([{ ...detailToRecord(fresh.listing), priceHistory: [] }], [], context);
+        downloadCsv(rows, exportFileName(fresh, 'csv', todayIso()));
+        setPageMessage(fresh.pageType === 'list' ? `${fresh.rows.length} ilan indirildi.` : 'İlan indirildi.');
+      })
+    }),
+    el('button', {
+      id: 'addPageBtn', class: 'btn', type: 'button', icon: 'plus', text: 'Sepete ekle',
+      onclick: () => withFreshPage(async (fresh) => {
+        const result = await chrome.runtime.sendMessage({ action: 'basket-add-page', data: { page: fresh } });
+        setPageMessage(result.status === 'success'
+          ? `Sepet: ${result.counts.new} yeni, ${result.counts.updated} güncellendi, ${result.counts.priceChanged} fiyatı değişti.`
+          : 'Sepete eklenemedi.');
+      })
+    }),
+    el('button', {
+      id: 'downloadJsonBtn', class: 'btn', type: 'button', text: 'JSON',
+      onclick: () => withFreshPage(async (fresh) => {
+        downloadJson(fresh, exportFileName(fresh, 'json', todayIso()));
+        setPageMessage('JSON indirildi.');
+      })
+    })
+  );
+}
+
+/**
+ * ============================================================================
+ * VEHICLES TAB
+ * ============================================================================
+ */
+function drawVehicles() {
+  const board = $('vehicleBoard');
+  const records = Object.values(app.basket);
+  const vehicles = records.filter(isVehicle);
+  const parts = [];
+
+  if (vehicles.length === 0) {
+    parts.push(...stateBlock('Sepette araç ilanı yok', 'Bir araç ilanını ya da listesini Sayfa bölümünden sepete ekle. Hasar şeması için ilan sayfasından eklemek gerekir.'));
+    parts.push(renderTermsEditor(app.terms, 'card'));
+    board.replaceChildren(...parts);
+    return;
+  }
+
+  const groups = vehicleGroups(vehicles);
+  if (groups.length > 0) {
+    parts.push(el('section', { class: 'card' }, [
+      el('h2', { class: 'card-title', text: 'Seri özeti' }),
+      el('div', {}, groups.slice(0, 8).map((group) => el('div', { class: 'series-row' }, [
+        el('div', {}, [
+          el('div', { style: 'font-weight: 600', text: group.key }),
+          el('div', { class: 'muted', text: `${formatNumber(group.count)} ilan${group.medianKm ? `, medyan ${formatNumber(group.medianKm)} km` : ''}` })
+        ]),
+        el('div', { class: 'series-figures' }, [
+          el('div', { style: 'font-weight: 650', text: group.medianPrice ? `${formatNumber(group.medianPrice)} ${group.currency}` : '-' }),
+          el('div', { class: 'muted', text: group.minPrice ? `en düşük ${formatNumber(group.minPrice)}` : '' })
+        ])
+      ])))
+    ]));
+  }
+
+  const rowsHost = el('div', { class: 'row-list' });
+  const drawRows = () => {
+    const rows = filterVehicles(records, app.vehicleFilters);
+    rowsHost.replaceChildren(...rows.map((record) => vehicleRow(record, vehicles, drawRows)));
+    if (rows.length === 0) rowsHost.appendChild(el('p', { class: 'small muted', style: 'padding: 12px 0', text: 'Bu filtrelere uyan araç yok. Hasar filtreleri yalnızca ilan sayfasından eklenen ilanlarda çalışır.' }));
+  };
+  drawRows();
+
+  parts.push(
+    el('section', { class: 'card' }, [
+      el('div', { class: 'group-header' }, [
+        el('h2', { text: `${formatNumber(vehicles.length)} araç ilanı` }),
+        el('button', {
+          class: 'btn', type: 'button', icon: 'download', text: 'CSV',
+          onclick: async () => {
+            const { hiddenColumns = [] } = await chrome.storage.local.get('hiddenColumns');
+            const context = await exportContext(app.features, app.ratesResult.rates);
+            downloadCsv(recordsToRows(filterVehicles(records, app.vehicleFilters), hiddenColumns, context), `sahibinden_arac_${todayIso()}.csv`);
+          }
+        })
+      ]),
+      el('div', { style: 'margin-bottom: 8px' }, renderVehicleFilters(records, app.vehicleFilters, drawRows)),
+      rowsHost
+    ]),
+    renderTermsEditor(app.terms, 'card')
+  );
+  const scroll = $('vehicles-tab').scrollTop;
+  board.replaceChildren(...parts);
+  $('vehicles-tab').scrollTop = scroll;
+}
+
+function vehicleRow(record, vehicles, redraw) {
+  const fields = record.fields || {};
+  const isOpen = app.vehicleExpanded.has(record.id);
+  const comparison = vehicleComparison(record, vehicles);
+  const yearly = computedFields(record, { now: Date.now() }).find(([name]) => name === 'Yıllık KM');
+  const tramer = parseDescription(record.description).tramer;
+  const meta = [
+    fields['Yıl'],
+    toNumber(fields.KM) !== null ? `${formatNumber(toNumber(fields.KM))} km` : null,
+    yearly ? `yılda ${formatNumber(yearly[1])} km` : null,
+    tramer === undefined ? null : `Tramer ${typeof tramer === 'number' ? `${formatNumber(tramer)} TL` : tramer}`,
+    comparison && comparison.priceDiff !== null ? `Seriye göre ${peerDiffText(comparison)}` : null
+  ].filter(Boolean);
+  const holder = el('div', { class: 'list-row' }, el('div', { class: 'list-row-main' }, [
+    record.image ? el('img', { class: 'list-thumb', src: record.image, alt: '', loading: 'lazy' }) : el('div', { class: 'list-thumb' }),
+    el('div', { style: 'min-width: 0' }, [
+      el('a', { class: 'list-title', href: record.url, target: '_blank', rel: 'noopener', text: record.title, title: record.title }),
+      el('div', { class: 'list-price', text: formatPrice(record.price) }),
+      el('div', { class: 'list-meta' }, meta.map((text) => el('span', { text }))),
+      el('div', { style: 'margin-top: 3px' }, renderDamageChips(record))
+    ]),
+    expandButton(isOpen, () => {
+      if (isOpen) app.vehicleExpanded.delete(record.id);
+      else app.vehicleExpanded.add(record.id);
+      redraw();
+    })
+  ]));
+  if (isOpen) {
+    const parts = [
+      comparison ? renderPeerComparison(comparison) : null,
+      renderVehicleReport(record, app.terms),
+      renderPhones(record),
+      renderTechnical(record, app.openFolds)
+    ].filter(Boolean);
+    holder.appendChild(el('div', { class: 'list-row-detail' }, parts.length > 0 ? parts : el('p', { class: 'small muted', text: 'Hasar ve teknik bilgi için ilanı açıp sepete ekle.' })));
+  }
+  return holder;
+}
 
 /**
  * ============================================================================
@@ -264,6 +595,10 @@ async function loadBasket() {
 const openWorkspace = () => chrome.tabs.create({ url: 'dashboard.html' });
 $('openWorkspaceBtn').addEventListener('click', openWorkspace);
 $('basketOpenBtn').addEventListener('click', openWorkspace);
+$('openPanelBtn').addEventListener('click', () => {
+  chrome.sidePanel.open({ windowId: app.tab.windowId });
+  window.close();
+});
 
 async function renderBasket() {
   const { records } = await loadBasket();
@@ -293,7 +628,7 @@ async function renderBasket() {
 $('basketCsvBtn').addEventListener('click', async () => {
   const { records, hiddenColumns } = await loadBasket();
   if (records.length === 0) return;
-  const context = await exportContext(features, ratesResult.rates);
+  const context = await exportContext(app.features, app.ratesResult.rates);
   downloadCsv(recordsToRows(records, hiddenColumns, context), `sahibinden_sepet_${todayIso()}.csv`);
   $('basketMessage').textContent = `${records.length} ilan indirildi.`;
 });
@@ -324,7 +659,7 @@ $('scanImagesBtn').addEventListener('click', async () => {
   } catch (error) {
     console.error('Error scanning images:', error);
     $('emptyState').hidden = false;
-    $('emptyState').textContent = 'Bu sayfa taranamadı. Sayfayı yenileyip tekrar dene.';
+    $('emptyState').textContent = 'Bu sayfa taranamadı. Sahibinden dışındaki bir sitedeysen, o sekmedeyken eklenti simgesine tıklayıp tekrar dene.';
   }
   scanButton.disabled = false;
 });
@@ -341,18 +676,6 @@ async function startImageDownload(images, summary) {
     stats.textContent = result.error === 'busy' ? 'Önceki indirme hâlâ sürüyor.' : summary;
   }
 }
-
-chrome.storage.onChanged.addListener((changes) => {
-  if (changes.imageProgress) {
-    const { done, total, errorCount } = changes.imageProgress.newValue;
-    const errors = errorCount > 0 ? `, ${errorCount} hata` : '';
-    $('imageStats').textContent = done === total
-      ? `İndirme bitti: ${total - errorCount}/${total}${errors}`
-      : `İndiriliyor: ${done}/${total}${errors}. Pencereyi kapatsan da devam eder.`;
-  }
-  if (changes.basket) renderBasket();
-  if (changes.guardedState) refreshGuarded();
-});
 
 function displayImageGroups(imageGroups) {
   const containerDiv = $('imageGroupsContainer');
@@ -423,7 +746,7 @@ async function startGuardedTool(feature) {
       return;
     }
     const { basket = {} } = await chrome.storage.local.get('basket');
-    const tabId = currentTab.id;
+    const tabId = app.tab.id;
     let request;
     if (feature === 'readWithoutOpening') {
       const listings = page.rows
@@ -449,7 +772,7 @@ async function refreshGuarded() {
   const status = await chrome.runtime.sendMessage({ action: 'guarded-status' });
   if (!status || status.status === 'error') return;
   const cooling = status.cooldownUntil > Date.now();
-  const enabled = GUARDED_TOOLS.filter((tool) => features[tool.feature]);
+  const enabled = GUARDED_TOOLS.filter((tool) => app.features[tool.feature]);
   const holder = $('guardedTools');
   holder.textContent = '';
   $('guardedOff').hidden = enabled.length > 0;
@@ -486,11 +809,23 @@ async function refreshGuarded() {
  * ============================================================================
  */
 function renderFeatureList() {
-  renderFeatureSettings($('featureList'), features, (text) => { $('settingsMessage').textContent = text; });
-  const onCount = FEATURES.filter((feature) => features[feature.id]).length;
+  renderFeatureSettings($('featureList'), app.features, (text) => { $('settingsMessage').textContent = text; });
+  const onCount = FEATURES.filter((feature) => app.features[feature.id]).length;
   const badge = $('featureCount');
   badge.hidden = onCount === 0;
   badge.textContent = String(onCount);
+}
+
+async function renderSurfacePicker() {
+  const { actionSurface = 'panel' } = await chrome.storage.local.get('actionSurface');
+  const picker = el('div', { class: 'segmented', role: 'group', 'aria-label': 'Simgeye tıklayınca' });
+  [['panel', 'Yan panel'], ['popup', 'Küçük pencere']].forEach(([value, label]) => {
+    picker.appendChild(el('button', {
+      type: 'button', text: label, 'aria-pressed': String(actionSurface === value),
+      onclick: () => chrome.storage.local.set({ actionSurface: value })
+    }));
+  });
+  $('surfacePicker').replaceChildren(picker);
 }
 
 $('allOffBtn').addEventListener('click', async () => {

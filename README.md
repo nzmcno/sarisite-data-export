@@ -3,7 +3,7 @@
 🚀 **Profesyonel Chrome Uzantısı** - Sahibinden.com ilanlarını CSV ve JSON olarak indirin. Görselleri kaydedin. Türkçe karakter desteği ile tam uyumlu.
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Uzantı-4285F4?style=for-the-badge&logo=google-chrome&logoColor=white)](https://chrome.google.com/webstore)
-[![Version](https://img.shields.io/badge/Sürüm-1.4.0-success?style=for-the-badge)](https://github.com/your-username/sahibinden-data-exporter)
+[![Version](https://img.shields.io/badge/Sürüm-1.5.0-success?style=for-the-badge)](https://github.com/your-username/sahibinden-data-exporter)
 [![License](https://img.shields.io/badge/Lisans-MIT-blue?style=for-the-badge)](LICENSE)
 
 ## 🎯 Kimler İçin Mükemmel
@@ -42,6 +42,10 @@
 - **Other Sites**: Full image scan grouped by size and type
 - **Paced Downloads**: One file at a time, and it continues if the popup closes
 
+### Yan Panel
+
+Eklenti simgesine tıklayınca yan panel açılır ve sekme değiştirsen de açık kalır. Tarayıcılar yan panelin tıklama olmadan açılmasına izin vermez, bu yüzden her pencerede ilk açılış için simgeye bir kez tıklamak gerekir. Küçük pencere ile aynı ekrandır: Sayfa, Araç, Görsel, Sepet, Deneysel ve Ayarlar. İstersen Ayarlar'daki **Simgeye tıklayınca** seçeneğinden küçük pencereye geçebilirsin.
+
 ### Araç İlanları
 
 Araç raporu her araç ilanında çalışır, düğmesi yoktur. Yalnızca açık sayfanın zaten taşıdığı veriyi okur, siteye ek istek göndermez.
@@ -51,7 +55,7 @@ Araç raporu her araç ilanında çalışır, düğmesi yoktur. Yalnızca açık
 - **Kendi kelimelerin:** Çalışma alanındaki Araç bölümünden aranacak kelime ekleyebilirsin. Her kelime rapora ve CSV'ye ayrı sütun olarak girer.
 - **Teknik veriler:** Motor, yakıt, boyut ve model donanımı. Bunlar modelin genel verileridir, o araca özel olmayabilir.
 - **Araç bölümü:** Sepetteki araçlar seri özetiyle listelenir, hasara ve seriye göre fiyat farkına göre süzülür.
-- **Yan panel:** İlan sayfasında raporu, liste sayfasında aranabilir ve sıralanabilir ilan listesini gösterir.
+- **Her yerde:** Araç raporu ve Araç bölümü yan panelde, küçük pencerede ve çalışma alanında aynıdır.
 
 ### Telefon Numaraları
 
@@ -64,7 +68,7 @@ Temel indirme ve sepet her zaman çalışır. Aşağıdakilerin **hepsi kapalı 
 | Risk | Özellikler |
 |---|---|
 | Düşük | Canlı kurlar (dolar, euro, sterlin, gram altın), elle kur, ek ilan verisi, hesaplanan alanlar, not/etiket/puan, filtre ve sıralama, fırsat puanı, grafikler, hazır sütun setleri, tablo olarak kopyalama, KML/GeoJSON, TKGM'de parseli açma, yedekleme, kayıtlı aramalar |
-| Orta | Yan panel, açtığım ilanları kaydet, gezdiğim listeleri kaydet |
+| Orta | Açtığım ilanları kaydet, gezdiğim listeleri kaydet |
 | Yüksek, **risk sana aittir** | İlanı açmadan oku, sonraki sayfaları oku, toplu fiyat geçmişi, kayıtlı aramaları arka planda kontrol et |
 
 **Yüksek riskli özellikler** siteye ek istek gönderir. Site bunu otomasyon sayıp hesabını kısıtlayabilir, kullanım koşullarına da aykırı olabilir. Testte, sitenin iç fiyat geçmişi servisine yapılan tek bir çağrıdan hemen sonra kısa süreli bir doğrulama sayfası çıktı.
@@ -174,7 +178,8 @@ Works with all Sahibinden categories:
 - `downloads`: Save exported files
 - `storage`: Keep the basket on your device
 - `host_permissions`: Sahibinden.com access
-- `sidePanel`, `alarms`, `notifications`: Declared up front, unused until you turn on the side panel or the saved search check
+- `sidePanel`: The extension's main screen
+- `alarms`, `notifications`: Declared up front, unused until you turn on the saved search check
 
 ## 🔒 Privacy & Security
 
@@ -227,7 +232,6 @@ sahibinden-csv-exporter/
 ├── popup.js               # Popup behaviour
 ├── dashboard.html/.js     # Basket workspace, charts, saved searches, backup
 ├── compare.html/.js       # Side-by-side comparison page
-├── sidepanel.html/.js     # Optional side panel
 ├── ui.css, ui.js          # Shared design tokens, icons and helpers
 ├── features.js            # List of optional features, all off by default
 ├── extractor.js           # Read-only page extraction (injected on demand)
@@ -263,7 +267,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔄 Version History
 
-### v1.4.0 (Current)
+### v1.5.0 (Current)
+
+- The icon opens the side panel, with a setting to use the small window instead
+- Side panel and small window are now one screen with the same tabs
+- New Araç tab with the series summary, damage filters and search words
+
+### v1.4.0
 
 - Vehicle report on every car listing: damage diagram, seller's statements, technical data
 - Workspace Araç section with a series summary, damage filters and price against the same series

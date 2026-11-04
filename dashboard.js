@@ -626,49 +626,7 @@ function viewAnalysis(view) {
  * DUPLICATES AND SAVED SEARCHES
  * ============================================================================
  */
-function vehicleRows() {
-  const vehicles = state.records.filter(isVehicle);
-  const { series, damage, sortBy, descending } = state.vehicleFilters;
-  const passes = (record) => {
-    const counts = damageCounts(record.damage);
-    if (series && `${(record.fields || {}).Marka || ''} ${(record.fields || {}).Seri || ''}`.trim() !== series) return false;
-    if (damage === 'noChanged') return !!counts && counts.changed === 0;
-    if (damage === 'clean') return !!counts && counts.changed + counts.painted + counts.localPainted === 0;
-    return true;
-  };
-  const load = (record) => {
-    const counts = damageCounts(record.damage);
-    return counts ? counts.changed * 2 + counts.painted + counts.localPainted * 0.5 : null;
-  };
-  const values = {
-    peer: (record) => {
-      const comparison = vehicleComparison(record, vehicles);
-      return comparison ? comparison.priceDiff : null;
-    },
-    price: (record) => (record.price ? record.price.amount : null),
-    km: (record) => toNumber((record.fields || {}).KM),
-    year: (record) => toNumber((record.fields || {})['Yıl']),
-    damage: load
-  };
-  const read = values[sortBy];
-  return vehicles.filter(passes).sort((a, b) => {
-    const [first, second] = [read(a), read(b)];
-    if (first === null || first === undefined) return 1;
-    if (second === null || second === undefined) return -1;
-    return descending ? second - first : first - second;
-  });
-}
-
-function damageCell(record) {
-  const counts = damageCounts(record.damage);
-  if (!counts) return el('span', { class: 'small muted', text: record.hasDetail ? 'Yok' : 'İlan açılmadı' });
-  if (counts.changed + counts.painted + counts.localPainted === 0) return el('span', { class: 'pill pill-low', text: 'Hasarsız' });
-  return el('span', { class: 'btn-row', style: 'gap: 4px; flex-wrap: nowrap' }, [
-    counts.changed ? el('span', { class: 'damage-key damage-key-changed', style: 'width: auto; padding: 0 5px', text: `${counts.changed} D` }) : null,
-    counts.painted ? el('span', { class: 'damage-key damage-key-painted', style: 'width: auto; padding: 0 5px', text: `${counts.painted} B` }) : null,
-    counts.localPainted ? el('span', { class: 'damage-key damage-key-local', style: 'width: auto; padding: 0 5px', text: `${counts.localPainted} L` }) : null
-  ]);
-}
+const vehicleRows = () => filterVehicles(state.records, state.vehicleFilters);
 
 function renderVehicleRows(table) {
   const vehicles = state.records.filter(isVehicle);
@@ -701,10 +659,10 @@ function renderVehicleRows(table) {
       el('td', { class: 'right', text: fields['Yıl'] || '-' }),
       el('td', { class: 'right', text: toNumber(fields.KM) === null ? '-' : formatNumber(toNumber(fields.KM)) }),
       el('td', { class: 'right', text: yearly ? formatNumber(yearly[1]) : '-' }),
-      el('td', {}, damageCell(record)),
+      el('td', {}, renderDamageChips(record)),
       el('td', { class: 'right', text: tramer === undefined ? '-' : typeof tramer === 'number' ? `${formatNumber(tramer)} TL` : tramer }),
       el('td', { class: 'right cell-price', text: formatPrice(record.price) }),
-      el('td', { class: 'right', text: comparison && comparison.priceDiff !== null ? `${comparison.priceDiff > 0 ? '+' : comparison.priceDiff < 0 ? '-' : ''}%${Math.abs(comparison.priceDiff)}` : '-' }),
+      el('td', { class: 'right', text: peerDiffText(comparison) || '-' }),
       el('td', { class: 'right' }, el('button', {
         class: 'expand', type: 'button', icon: 'chevron', 'aria-label': 'Detayı aç veya kapat', 'aria-expanded': String(isOpen),
         onclick: () => {
@@ -726,34 +684,6 @@ function renderVehicleRows(table) {
   $('vehicleEmpty').hidden = rows.length > 0;
 }
 
-function termsPanel() {
-  const chips = el('div', { class: 'term-chips' });
-  const save = (terms) => chrome.storage.local.set({ vehicleTerms: terms });
-  state.vehicleTerms.forEach((term) => {
-    chips.appendChild(el('span', { class: 'pill pill-neutral' }, [
-      el('span', { text: term }),
-      el('button', {
-        class: 'btn-link', type: 'button', text: '×', 'aria-label': `${term} kaldır`, style: 'margin-left: 6px; text-decoration: none',
-        onclick: () => save(state.vehicleTerms.filter((item) => item !== term))
-      })
-    ]));
-  });
-  const input = el('input', { type: 'text', placeholder: 'Örn. partikül, LPG, değişen', 'aria-label': 'Aranacak kelime', style: 'width: 240px' });
-  const add = () => {
-    const term = input.value.trim();
-    if (term && !state.vehicleTerms.includes(term)) save([...state.vehicleTerms, term]);
-  };
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') add();
-  });
-  return el('section', { class: 'panel' }, [
-    el('h2', { text: 'Açıklamada aranacak kelimeler' }),
-    el('p', { class: 'panel-note', text: 'Burada eklediğin kelimeler Araç raporunda, yan panelde ve CSV’de ayrı sütun olarak görünür.' }),
-    el('div', { class: 'btn-row', style: 'margin-bottom: 10px' }, [input, el('button', { class: 'btn', type: 'button', icon: 'plus', text: 'Ekle', onclick: add })]),
-    chips
-  ]);
-}
-
 function viewVehicles(view) {
   const vehicles = state.records.filter(isVehicle);
   view.appendChild(titleRow('Araç', vehicles.length === 0 ? 'Sepette araç ilanı yok' : `Sepette ${formatNumber(vehicles.length)} araç ilanı`,
@@ -763,7 +693,7 @@ function viewVehicles(view) {
     })));
   if (vehicles.length === 0) {
     view.appendChild(el('section', { class: 'panel' }, el('p', { class: 'empty-text', text: 'Bir araç ilanını ya da listesini açıp sepete ekle. Hasar şeması ve teknik veriler için ilan sayfasından eklemek gerekir.' })));
-    view.appendChild(termsPanel());
+    view.appendChild(renderTermsEditor(state.vehicleTerms, 'panel'));
     return;
   }
 
@@ -789,28 +719,13 @@ function viewVehicles(view) {
   }
 
   const table = el('table', { class: 'listings' }, [el('thead'), el('tbody')]);
-  const seriesNames = [...new Set(vehicles.map((record) => `${(record.fields || {}).Marka || ''} ${(record.fields || {}).Seri || ''}`.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'tr'));
-  const pick = (label, key, options, parse) => {
-    const select = el('select', { 'aria-label': label }, options.map(([value, text]) => el('option', { value, text })));
-    select.value = String(state.vehicleFilters[key]);
-    select.addEventListener('change', () => {
-      state.vehicleFilters[key] = parse ? parse(select.value) : select.value;
-      renderVehicleRows(table);
-    });
-    return select;
-  };
   view.appendChild(el('section', {}, [
-    el('div', { class: 'filters', style: 'margin-bottom: 14px' }, [
-      pick('Seri', 'series', [['', 'Tüm seriler'], ...seriesNames.map((name) => [name, name])]),
-      pick('Hasar', 'damage', [['', 'Tüm hasar durumları'], ['noChanged', 'Değişeni olmayan'], ['clean', 'Boya ve değişeni olmayan']]),
-      pick('Sırala', 'sortBy', [['peer', 'Seriye göre fiyat'], ['price', 'Fiyat'], ['km', 'KM'], ['year', 'Yıl'], ['damage', 'Hasar']]),
-      pick('Yön', 'descending', [['false', 'Artan'], ['true', 'Azalan']], (value) => value === 'true')
-    ]),
+    el('div', { style: 'margin-bottom: 14px' }, renderVehicleFilters(vehicles, state.vehicleFilters, () => renderVehicleRows(table))),
     el('div', { class: 'table-wrap' }, table),
     el('p', { id: 'vehicleEmpty', class: 'empty-text', hidden: true, text: 'Bu filtrelere uyan araç yok. Hasar filtreleri yalnızca ilan sayfasından eklenen ilanlarda çalışır.' })
   ]));
   renderVehicleRows(table);
-  view.appendChild(termsPanel());
+  view.appendChild(renderTermsEditor(state.vehicleTerms, 'panel'));
 }
 
 async function viewSearches(view) {

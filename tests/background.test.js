@@ -24,10 +24,12 @@ function loadWorker(initial) {
   const responses = { queue: [] };
   const chrome = {
     runtime: {
-      onInstalled: { addListener() {} },
+      onInstalled: { addListener: (fn) => { listeners.installed = fn; } },
+      onStartup: { addListener() {} },
       onMessage: { addListener: (fn) => { listeners.message = fn; } }
     },
-    storage: { local: area(local), session: area(session) },
+    storage: { local: area(local), session: area(session), onChanged: { addListener: (fn) => { listeners.storageChanged = fn; } } },
+    action: { setPopup: async (options) => { log.popup = options.popup; } },
     tabs: {
       onUpdated: { addListener: (fn) => { listeners.tabUpdated = fn; } },
       query: async () => (initial && initial.openTabs) || []
@@ -48,7 +50,7 @@ function loadWorker(initial) {
   };
   chrome.sidePanel = {
     setOptions: async (options) => { log.sidePanel = options; },
-    setPanelBehavior: async () => {}
+    setPanelBehavior: async (options) => { log.panelOnClick = options.openPanelOnActionClick; }
   };
   const sandbox = {
     chrome,
@@ -202,6 +204,21 @@ test('the saved search alarm is created only when its switch is on', async () =>
   const on = loadWorker({ local: { features: { savedSearchCheck: true } } });
   await on.send('features-changed', {});
   assert.deepStrictEqual(on.log.alarms, ['create:saved-search-check']);
+});
+
+test('the icon opens the side panel until the small window is chosen', async () => {
+  const panel = loadWorker();
+  panel.listeners.installed();
+  await panel.settle();
+  assert.strictEqual(panel.log.popup, '');
+  assert.strictEqual(panel.log.panelOnClick, true);
+  assert.strictEqual(panel.log.sidePanel.path, 'popup.html');
+  assert.strictEqual(panel.log.sidePanel.enabled, true);
+  const small = loadWorker({ local: { actionSurface: 'popup' } });
+  small.listeners.installed();
+  await small.settle();
+  assert.strictEqual(small.log.popup, 'popup.html');
+  assert.strictEqual(small.log.panelOnClick, false);
 });
 
 test('images download one at a time', async () => {
