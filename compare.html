@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Karşılaştırma - İlan Veri İndirici</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="ui.css">
+  <style>
+    html, body {
+      font-size: 14px;
+      line-height: 20px;
+    }
+
+    .top {
+      display: flex;
+      align-items: center;
+      height: 48px;
+      padding: 0 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+
+    main {
+      padding: 24px;
+    }
+
+    .title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .title-row h1 {
+      font-size: 24px;
+      line-height: 30px;
+      font-weight: 700;
+    }
+
+    .check {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      line-height: 18px;
+    }
+
+    td {
+      padding: 7px 12px;
+      text-align: left;
+      vertical-align: top;
+      min-width: 180px;
+      max-width: 320px;
+      overflow-wrap: anywhere;
+      border-bottom: 1px solid var(--rule);
+      font-variant-numeric: tabular-nums;
+    }
+
+    td:first-child {
+      min-width: 170px;
+      position: sticky;
+      left: 0;
+      color: var(--muted);
+      background: var(--surface);
+    }
+
+    tr.different td:not(:first-child) {
+      background: var(--accent-soft);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .photo {
+      display: block;
+      width: 160px;
+      height: 120px;
+      object-fit: cover;
+      border-radius: 4px;
+      background: var(--raised);
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="brand" data-brand-mark><span class="brand-name">İlan Veri İndirici</span></div>
+  </header>
+  <main>
+    <div class="title-row">
+      <h1>Karşılaştırma</h1>
+      <label class="check"><input type="checkbox" id="onlyDifferences"> Yalnızca farklı olanları göster</label>
+    </div>
+    <div class="table-wrap"><table id="compareTable"></table></div>
+  </main>
+  <script src="features.js"></script>
+  <script src="lib.js"></script>
+  <script src="ui.js"></script>
+  <script src="compare.js"></script>
+</body>
+</html>

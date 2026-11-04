@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last Updated: June 17, 2025**
+**Last Updated: November 4, 2026**
 
 ## Overview
 
@@ -25,9 +25,9 @@ Sahibinden CSV/Excel Exporter ("the Extension") is committed to protecting your 
 ### Cookies and Storage
 
 - We do **not** set cookies
-- We do **not** use local storage for data retention
-- We do **not** cache any user data
 - We do **not** maintain user profiles
+- Listings you add to the basket, your column choices and download progress are saved in the browser's local extension storage, on your device only
+- You can delete basket contents at any time from the Sepet tab
 
 ## How the Extension Works
 
@@ -40,11 +40,22 @@ Sahibinden CSV/Excel Exporter ("the Extension") is committed to protecting your 
 
 ### Data Flow
 
-1. **Input**: You visit Sahibinden.com search results
-2. **Processing**: Extension reads visible page content
-3. **Output**: Creates CSV/Excel file locally
+1. **Input**: You visit a Sahibinden.com results or listing page
+2. **Processing**: Extension reads the page content, including photo and map data the page already holds
+3. **Output**: Creates a CSV or JSON file locally
 4. **Download**: File is saved to your download folder
-5. **Cleanup**: No data retained by the extension
+5. **Retention**: Only what you add to the basket is kept, until you remove it
+
+Seller names and phone numbers are not extracted. Listing descriptions are copied as written, so they can contain contact details the seller typed there.
+
+### Optional Features
+
+Every optional feature is off until you turn it on in the Ayarlar tab.
+
+- **Live exchange rates:** when on, the extension requests rates from `finans.truncgil.com`, with `api.frankfurter.dev` and `api.gold-api.com` as fallbacks. These requests carry no cookies, listing data or browsing data, but those services can see your IP address, as with any web request.
+- **Extra-request tools:** when you start one, the extension requests up to 10 listings or 5 result pages per run from Sahibinden.com through your open tab and your session. The saved search check does the same every 6 hours for up to 3 searches, only if a Sahibinden.com tab is open. These requests go only to Sahibinden.com.
+- **Browsing capture:** when on, the extension reads each Sahibinden.com listing or results page you open and saves it to the basket on your device.
+- **TKGM shortcut:** when you click its button, the extension looks up the province, district and neighbourhood in TKGM's public lists at `cbsapi.tkgm.gov.tr`, then opens that parcel on `parselsorgu.tkgm.gov.tr`. TKGM can see which province and district were looked up, the parcel you open, and your IP address. No listing text, price or account data is sent. Nothing happens until you click.
 
 ## Permissions Explained
 
@@ -52,40 +63,43 @@ The extension requests minimal permissions necessary for functionality:
 
 ### `activeTab`
 
-- **Purpose**: Access content of the current Sahibinden.com tab
+- **Purpose**: Access the current tab when you open the extension
 - **Scope**: Only the active tab, only when extension is used
-- **Data Access**: Only visible classified ad information
+- **Data Access**: Listing data on Sahibinden.com; image addresses when you scan images on another site
 
 ### `scripting`
 
 - **Purpose**: Execute scripts to extract data from the page
-- **Scope**: Limited to Sahibinden.com domain
-- **Function**: Parse HTML content for export
+- **Scope**: The active tab, on demand
+- **Function**: Read HTML content for export, without changing the page
 
 ### `downloads`
 
-- **Purpose**: Save generated CSV/Excel files
+- **Purpose**: Save generated CSV/JSON files and images
 - **Scope**: Create files in your default download folder
 - **Data**: Only the exported file data
+
+### `storage`
+
+- **Purpose**: Keep the basket and your column choices
+- **Scope**: Local to your browser
 
 ### `host_permissions`
 
 - **Scope**: `*://*.sahibinden.com/*`
-- **Purpose**: Access Sahibinden.com pages only
-- **Limitation**: No access to other websites
+- **Purpose**: Access Sahibinden.com pages
+- **Limitation**: Other websites are reachable only through `activeTab`, when you open the extension on them
+
+### `alarms`, `notifications`, `sidePanel`
+
+- **Purpose**: The saved search check and the side panel
+- **Scope**: Declared up front so that switching these features on takes effect at once. They stay unused until you turn the feature on
+- **Other addresses**: The extension holds no host permission for the rate services or TKGM. It calls their public addresses without cookies
 
 ## Third-Party Services
 
-### SheetJS Library
-
-- **Purpose**: Generate Excel (XLSX) files
-- **Source**: Loaded from CDN only when needed
-- **Data Flow**: Processes data locally, no external transmission
-- **Privacy**: No data sent to SheetJS servers
-
-### No Other Third Parties
-
-- We do not integrate with any other external services
+- Without the optional features, the extension contacts no third-party service
+- Live exchange rates and the TKGM shortcut, when you use them, contact the services listed under Optional Features
 - No advertising networks
 - No social media tracking
 - No marketing platforms
@@ -96,12 +110,12 @@ The extension requests minimal permissions necessary for functionality:
 
 - All operations performed in your browser's secure environment
 - No server-side processing or storage
-- Data never leaves your device except as downloaded files
+- Exported data stays on your device
 
 ### Minimal Attack Surface
 
 - Extension has no backend infrastructure
-- No databases or data storage systems
+- No remote databases
 - No user accounts or authentication
 
 ## Your Control
@@ -109,7 +123,7 @@ The extension requests minimal permissions necessary for functionality:
 ### Data Control
 
 - You control what data is exported
-- Only visible page content is processed
+- Only the page you open is processed, unless you start the experimental reader
 - You choose when to run the extension
 - Downloaded files are managed by you
 
@@ -187,6 +201,6 @@ This Privacy Policy is governed by:
 
 ---
 
-**Summary**: This extension is designed with privacy-first principles. We collect no data, track no users, and process everything locally on your device. Your privacy is protected by design, not just by policy.
+**Summary**: We collect no data and track no users. Everything is processed and kept locally on your device.
 
 **Questions?** Contact us if you need clarification on any aspect of our privacy practices.

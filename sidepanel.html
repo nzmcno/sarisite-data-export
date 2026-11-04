@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>İlan Veri İndirici</title>
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="ui.css">
+  <style>
+    body {
+      padding: 12px;
+    }
+
+    main {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .lead-figure {
+      font-size: 28px;
+      line-height: 34px;
+      font-weight: 750;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+    }
+
+    .rates-cells {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .rates-cell:nth-child(3) {
+      border-left: none;
+    }
+
+    .rates-cell:nth-child(n + 3) {
+      border-top: 1px solid var(--accent-track);
+    }
+  </style>
+</head>
+<body>
+  <div class="brand" data-brand-mark><h1 class="brand-name">İlan Veri İndirici</h1></div>
+  <main>
+    <div id="lead"></div>
+    <div id="rates"></div>
+    <button id="addBtn" class="btn btn-primary" type="button" data-icon="plus">Sepete ekle</button>
+    <p id="message" class="message" role="status"></p>
+    <div id="stats"></div>
+  </main>
+  <script src="features.js"></script>
+  <script src="lib.js"></script>
+  <script src="ui.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

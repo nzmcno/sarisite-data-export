@@ -1,723 +1,492 @@
-// popup.js - Sahibinden CSV Exporter with Image Download Feature
-// Professional Chrome Extension for exporting classified ads to CSV and downloading images
+// popup.js - Sahibinden CSV Exporter popup
+// The page is only read (see extractor.js). Files are built here, so nothing is added to the page.
+
+let currentTab = null;
+let currentPage = null;
+let features = normalizeFeatures({});
+let ratesResult = { status: 'off', rates: null };
+
+async function getActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab;
+}
+
+async function readPage() {
+  currentTab = await getActiveTab();
+  currentPage = await runInTab(currentTab.id, 'extractPage');
+  return currentPage;
+}
+
+function pageProblem(page) {
+  if (page.pageType === 'blocked') return 'Site doğrulama sayfası gösteriyor. Eklenti bu sayfada çalışmaz. Doğrulamayı sen tamamla, sonra tekrar aç.';
+  if (page.pageType === 'other') return 'Burası liste veya ilan sayfası değil. Bir sahibinden arama sonucu ya da ilan aç.';
+  if (page.pageType === 'list' && page.rows.length === 0) {
+    return 'Tablo var ama ilan satırı yok. Sonuç boş olabilir ya da sitenin yapısı değişmiş olabilir.';
+  }
+  return '';
+}
+
+const pageRecords = (page) => page.rows.map((row) => listRowToRecord(row, page));
 
 /**
  * ============================================================================
- * TAB NAVIGATION
+ * TAB NAVIGATION AND PAGE STATE
  * ============================================================================
  */
-document.addEventListener('DOMContentLoaded', () => {
-  // Tab switching functionality
-  const tabButtons = document.querySelectorAll('.tab-button');
-  const tabContents = document.querySelectorAll('.tab-content');
-  
-  tabButtons.forEach(button => {
+document.addEventListener('DOMContentLoaded', async () => {
+  hydrateBrand();
+  hydrateIcons();
+  renderThemePicker($('themePicker'));
+  document.querySelectorAll('.tab-button').forEach((button) => {
     button.addEventListener('click', () => {
-      const tabName = button.getAttribute('data-tab');
-      
-      // Remove active class from all tabs and buttons
-      tabButtons.forEach(btn => btn.classList.remove('active'));
-      tabContents.forEach(content => content.classList.remove('active'));
-      
-      // Add active class to clicked button and corresponding content
-      button.classList.add('active');
-      document.getElementById(`${tabName}-tab`).classList.add('active');
-    });
-  });
-});
-
-/**
- * ============================================================================
- * CSV DOWNLOAD FUNCTIONALITY
- * ============================================================================
- */
-document.getElementById("downloadCsvBtn").addEventListener("click", async () => {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      function: extractAndDownloadCSV
-    });
-  } catch (error) {
-    console.error('Error executing script:', error);
-    alert('Script çalıştırılamadı. Lütfen sayfayı yenileyin ve tekrar deneyin.');
-  }
-});
-
-/**
- * Main extraction function - extracts classified ads data and downloads as CSV
- * This function runs in the context of the sahibinden.com page
- */
-function extractAndDownloadCSV() {
-  try {
-    const rows = document.querySelectorAll("#searchResultsTable tbody tr[data-id]");
-    
-    if (rows.length === 0) {
-      alert('Sayfa üzerinde ilan bulunamadı.');
-      return;
-    }
-
-    // Başlıkları otomatik olarak thead'den al
-    const headerCells = document.querySelectorAll("#searchResultsTable thead tr td");
-    const headers = [];
-    
-    headerCells.forEach((cell, index) => {
-      if (index === 0) {
-        headers.push("Resim");
-      } else {
-        // ignore sütunlarını atla
-        if (cell.classList.contains('searchResultsIgnoredColumn') || 
-            cell.classList.contains('ignore-me') ||
-            cell.innerText.trim() === "" ||
-            cell.innerText.trim() === "&nbsp;") {
-          return;
-        }
-        
-        // Diğer başlıkları al, link içindeki metni tercih et
-        const linkText = cell.querySelector("a")?.innerText.trim();
-        const cellText = cell.innerText.trim();
-        const headerText = linkText || cellText || `Sütun ${index}`;
-        
-        // Boş veya çok kısa başlıkları filtrele
-        if (headerText.length > 1 && headerText !== "&nbsp;") {
-          headers.push(headerText);
-        }
-      }
-    });
-    
-    // Link sütununu da ekle
-    headers.push("İlan Linki");
-    
-    const csv = [headers];
-
-    rows.forEach(row => {
-      const rowData = [];
-      
-      // 1. Resim linkini al (her zaman var)
-      const imgElement = row.querySelector(".searchResultsLargeThumbnail img");
-      const imageUrl = imgElement ? imgElement.src : "";
-      rowData.push(imageUrl);
-      
-      // 2. Dinamik olarak tüm sütunları al
-      const allCells = row.querySelectorAll("td");
-      
-      allCells.forEach((cell, index) => {
-        // İlk sütun resim, son sütun ignore butonları - bunları atla
-        if (index === 0 || cell.classList.contains('ignore-me') || cell.classList.contains('searchResultsIgnoredColumn')) {
-          return;
-        }
-        
-        let cellValue = "";
-        
-        // Özel durumlar için kontrol et
-        if (cell.classList.contains('searchResultsTitleValue')) {
-          // İlan başlığı
-          const titleElement = cell.querySelector(".classifiedTitle");
-          cellValue = titleElement?.innerText.trim() || "";
-        } else if (cell.classList.contains('searchResultsPriceValue')) {
-          // Fiyat
-          const priceElement = cell.querySelector("span") || cell.querySelector(".classified-price-container span");
-          cellValue = priceElement?.innerText.trim().replace(/\./g, '').replace(' TL', '') || "";
-        } else if (cell.classList.contains('searchResultsDateValue')) {
-          // Tarih
-          const spans = cell.querySelectorAll("span");
-          if (spans.length >= 2) {
-            cellValue = `${spans[0].innerText.trim()} ${spans[1].innerText.trim()}`;
-          } else {
-            cellValue = cell.innerText.trim();
-          }
-        } else if (cell.classList.contains('searchResultsLocationValue')) {
-          // Konum - br etiketi varsa '/' ile birleştir
-          const locationText = cell.innerText.trim();
-          const brElement = cell.querySelector('br');
-          
-          if (brElement) {
-            // br etiketi var - '/' ile birleştir
-            const parts = locationText.split('\n').filter(part => part.trim() !== '');
-            if (parts.length >= 2) {
-              cellValue = `${parts[0].trim()} / ${parts[1].trim()}`;
-            } else {
-              cellValue = locationText;
-            }
-          } else {
-            // br etiketi yok - direkt al
-            cellValue = locationText;
-          }
-        } else {
-          // Genel durumlar - direkt text al
-          cellValue = cell.innerText.trim();
-        }
-        
-        rowData.push(cellValue);
+      document.querySelectorAll('.tab-button').forEach((other) => {
+        other.classList.toggle('active', other === button);
+        other.setAttribute('aria-selected', String(other === button));
       });
-      
-      // İlan linkini son sütun olarak ekle
-      const titleElement = row.querySelector(".classifiedTitle");
-      const ilanLink = titleElement?.href ? (titleElement.href.startsWith('http') ? titleElement.href : 'https://www.sahibinden.com' + titleElement.href) : "";
-      rowData.push(ilanLink);
-      
-      csv.push(rowData);
+      document.querySelectorAll('.tab-content').forEach((content) => content.classList.remove('active'));
+      $(`${button.getAttribute('data-tab')}-tab`).classList.add('active');
     });
-
-    // CSV formatını düzgün şekilde oluştur - her hücreyi tırnak içine al ve noktalı virgül kullan
-    const csvContent = csv.map(row => 
-      row.map(cell => {
-        // Boş değerleri kontrol et
-        const cellValue = String(cell || "");
-        // Çift tırnakları escape et ve her hücreyi tırnak içine al
-        return `"${cellValue.replace(/"/g, '""')}"`;
-      }).join(";")  // Noktalı virgül kullan (Türkiye Excel standardı)
-    ).join("\n");
-    
-    // BOM ekleyerek UTF-8 formatını belirt
-    const csvWithBOM = "\uFEFF" + csvContent;
-    const blob = new Blob([csvWithBOM], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", "sahibinden_ilanlar.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    // Clean up
-    URL.revokeObjectURL(url);
-    
-  } catch (error) {
-    console.error('Error during extraction:', error);
-    alert('Veri çıkarılırken bir hata oluştu. Lütfen sayfayı yenileyin ve tekrar deneyin.');
-  }
-}
-
-/**
- * ============================================================================
- * IMAGE DOWNLOAD FUNCTIONALITY
- * ============================================================================
- */
-
-/**
- * Scan Images Button - Starts the image scanning process
- */
-document.getElementById("scanImagesBtn").addEventListener("click", async () => {
-  const scanButton = document.getElementById("scanImagesBtn");
-  const emptyState = document.getElementById("emptyState");
-  const imageResults = document.getElementById("imageResults");
-  
-  try {
-    // Show loading state
-    scanButton.disabled = true;
-    scanButton.innerHTML = '<span class="loading-spinner"></span> Taranıyor...';
-    emptyState.style.display = 'none';
-    
-    // Get active tab
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    
-    // Execute image scanning script in the page context
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      function: scanPageForImages
-    });
-    
-    const imageGroups = results[0].result;
-    
-    // Display results
-    displayImageGroups(imageGroups);
-    imageResults.style.display = 'block';
-    
-    // Reset button
-    scanButton.disabled = false;
-    scanButton.innerHTML = '🔍 Sayfayı Tara';
-    
-  } catch (error) {
-    console.error('Error scanning images:', error);
-    alert('Görsel tarama sırasında bir hata oluştu.');
-    scanButton.disabled = false;
-    scanButton.innerHTML = '🔍 Sayfayı Tara';
-    emptyState.style.display = 'block';
-  }
+  });
+  features = await loadFeatures();
+  renderFeatureList();
+  await refreshPageState();
+  renderBasket();
+  refreshGuarded();
+  refreshRates(false);
+  onFeaturesChanged(applyFeatureChange);
 });
 
-/**
- * Scan page for images - Runs in page context
- * Finds all IMG elements and background images, groups them by size and type
- */
-function scanPageForImages() {
-  console.log('Starting image scan...');
-  
-  const imageMap = new Map(); // To avoid duplicates
-  const imageGroups = {};
-  
-  // =========================================================================
-  // STEP 1: Find all IMG elements
-  // =========================================================================
-  const imgElements = document.querySelectorAll('img');
-  console.log(`Found ${imgElements.length} img elements`);
-  
-  imgElements.forEach((img, index) => {
-    const imageUrl = img.src;
-    
-    // Skip if no URL or already processed
-    if (!imageUrl || !imageUrl.startsWith('http') || imageMap.has(imageUrl)) {
-      return;
+/** A switch changed here or in the workspace: redraw everything it affects right away */
+async function applyFeatureChange() {
+  const before = features;
+  features = await loadFeatures();
+  renderFeatureList();
+  await refreshPageState();
+  refreshRates(features.liveRates && !before.liveRates);
+  refreshGuarded();
+}
+
+let pageRefreshRun = 0;
+
+async function refreshPageState() {
+  const run = ++pageRefreshRun;
+  const lead = $('pageLead');
+  const disable = (disabled) => {
+    ['downloadCsvBtn', 'downloadJsonBtn', 'addPageBtn'].forEach((id) => { $(id).disabled = disabled; });
+  };
+  const clear = () => {
+    lead.textContent = '';
+    $('pageStats').hidden = true;
+    $('pageInsights').hidden = true;
+  };
+  try {
+    const page = await readPage();
+    if (run !== pageRefreshRun) return;
+    clear();
+    const problem = pageProblem(page);
+    disable(!!problem);
+    if (problem) {
+      lead.appendChild(el('div', { class: 'notice', icon: 'alert' }, el('span', { text: problem })));
+    } else if (page.pageType === 'detail') {
+      const { listing } = page;
+      lead.append(
+        el('p', { class: 'lead-title', text: listing.title }),
+        el('p', { class: 'lead-figure', text: formatPrice(listing.price) }),
+        el('p', { class: 'lead-caption', text: `${listing.location.raw} · ${Object.keys(listing.attributes).length} bilgi, ${listing.photos.length} fotoğraf` })
+      );
+      renderPageInsights(listing);
+    } else {
+      const records = pageRecords(page);
+      const medianPrice = pageMedianPrice(records);
+      const scope = page.total ? `Bu sayfada ${page.rows.length} ilan, aramada ${formatNumber(page.total)}` : `Bu sayfada ${page.rows.length} ilan`;
+      lead.append(
+        el('p', { class: 'lead-title', text: (page.category || []).slice(-3).join(' › ') || 'Arama sonuçları' }),
+        medianPrice ? el('p', { class: 'lead-figure', text: formatPrice(medianPrice) }) : null,
+        el('p', { class: 'lead-caption', text: medianPrice ? `Medyan fiyat · ${scope}` : scope })
+      );
+      renderStats($('pageStats'), records);
+      $('pageStats').hidden = $('pageStats').childElementCount === 0;
     }
-    
-    // Get rendered dimensions
-    const renderedWidth = img.offsetWidth;
-    const renderedHeight = img.offsetHeight;
-    
-    // Skip tiny or hidden images
-    if (renderedWidth === 0 || renderedHeight === 0) {
-      return;
-    }
-    
-    // Get natural dimensions
-    const actualWidth = img.naturalWidth;
-    const actualHeight = img.naturalHeight;
-    
-    // Get image type from URL
-    const urlParts = imageUrl.split('.');
-    const extension = urlParts[urlParts.length - 1].split(/[?#]/)[0].toLowerCase();
-    const imageType = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'avif'].includes(extension) 
-      ? extension 
-      : 'unknown';
-    
-    // Create image object
-    const imageData = {
-      url: imageUrl,
-      alt: img.alt || '',
-      renderedWidth,
-      renderedHeight,
-      actualWidth,
-      actualHeight,
-      type: imageType
-    };
-    
-    // Mark as processed
-    imageMap.set(imageUrl, true);
-    
-    // =========================================================================
-    // Group images by rendered dimensions and type
-    // =========================================================================
-    const groupKey = `${Math.round(renderedWidth)}x${Math.round(renderedHeight)}-${imageType}`;
-    
-    if (!imageGroups[groupKey]) {
-      imageGroups[groupKey] = {
-        renderedDimensions: `${Math.round(renderedWidth)}×${Math.round(renderedHeight)}`,
-        actualDimensions: new Set(),
-        type: imageType,
-        images: []
-      };
-    }
-    
-    imageGroups[groupKey].images.push(imageData);
-    imageGroups[groupKey].actualDimensions.add(`${actualWidth}×${actualHeight}`);
-  });
-  
-  // =========================================================================
-  // STEP 2: Find background images (CSS)
-  // =========================================================================
-  const allElements = document.querySelectorAll('*');
-  console.log(`Checking ${allElements.length} elements for background images...`);
-  
-  let bgImageCount = 0;
-  allElements.forEach(element => {
-    const computedStyle = window.getComputedStyle(element);
-    const backgroundImage = computedStyle.backgroundImage;
-    
-    // Check if element has background image
-    if (backgroundImage && backgroundImage !== 'none') {
-      // Extract URL from background-image CSS property
-      // Format: url("https://example.com/image.jpg") or url('...')
-      const urlMatch = backgroundImage.match(/url\(['"]?([^'"]+)['"]?\)/);
-      
-      if (urlMatch && urlMatch[1]) {
-        const imageUrl = urlMatch[1];
-        
-        // Skip if already processed or not a valid HTTP URL
-        if (!imageUrl.startsWith('http') || imageMap.has(imageUrl)) {
-          return;
-        }
-        
-        // Get element dimensions
-        const renderedWidth = element.offsetWidth;
-        const renderedHeight = element.offsetHeight;
-        
-        // Skip tiny or hidden elements
-        if (renderedWidth === 0 || renderedHeight === 0) {
-          return;
-        }
-        
-        // Get image type from URL
-        const urlParts = imageUrl.split('.');
-        const extension = urlParts[urlParts.length - 1].split(/[?#]/)[0].toLowerCase();
-        const imageType = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'avif'].includes(extension)
-          ? extension
-          : 'unknown';
-        
-        // For background images, we don't know natural dimensions until loaded
-        // So we'll use rendered dimensions as a placeholder
-        const imageData = {
-          url: imageUrl,
-          alt: 'Background Image',
-          renderedWidth,
-          renderedHeight,
-          actualWidth: renderedWidth, // Placeholder
-          actualHeight: renderedHeight, // Placeholder
-          type: imageType,
-          isBackgroundImage: true
-        };
-        
-        // Mark as processed
-        imageMap.set(imageUrl, true);
-        bgImageCount++;
-        
-        // Group by dimensions and type
-        const groupKey = `${Math.round(renderedWidth)}x${Math.round(renderedHeight)}-${imageType}`;
-        
-        if (!imageGroups[groupKey]) {
-          imageGroups[groupKey] = {
-            renderedDimensions: `${Math.round(renderedWidth)}×${Math.round(renderedHeight)}`,
-            actualDimensions: new Set(),
-            type: imageType,
-            images: []
-          };
-        }
-        
-        imageGroups[groupKey].images.push(imageData);
-        imageGroups[groupKey].actualDimensions.add(`${renderedWidth}×${renderedHeight}`);
+    renderPageTools(page, problem);
+  } catch (error) {
+    if (run !== pageRefreshRun) return;
+    clear();
+    disable(true);
+    lead.appendChild(el('div', { class: 'notice', icon: 'alert' }, el('span', { text: 'Bu sayfa okunamadı. Sayfayı yenileyip tekrar dene.' })));
+    renderPageTools({ pageType: 'other' }, 'unreadable');
+  }
+}
+
+function renderPageInsights(listing) {
+  const holder = $('pageInsights');
+  holder.textContent = '';
+  const facts = listingInsights(detailToRecord(listing), features, { now: Date.now() });
+  holder.hidden = facts.length === 0;
+  if (facts.length > 0) holder.append(el('h2', { class: 'card-title', text: 'Bu ilan hakkında' }), renderFacts(facts));
+}
+
+function renderPageTools(page, problem) {
+  const tools = $('pageTools');
+  tools.textContent = '';
+  if (features.sidePanel) {
+    tools.appendChild(el('button', {
+      class: 'btn', type: 'button', icon: 'panel', text: 'Yan panel',
+      onclick: () => {
+        chrome.sidePanel.open({ windowId: currentTab.windowId });
+        window.close();
       }
-    }
-  });
-  
-  console.log(`Found ${bgImageCount} background images`);
-  
-  // =========================================================================
-  // STEP 3: Sort and format groups
-  // =========================================================================
-  
-  // Convert actualDimensions Set to Array for serialization
-  Object.keys(imageGroups).forEach(key => {
-    imageGroups[key].actualDimensions = Array.from(imageGroups[key].actualDimensions);
-  });
-  
-  // Sort groups by image count (descending) and size (descending)
-  const sortedGroups = {};
-  Object.keys(imageGroups)
-    .sort((a, b) => {
-      const groupA = imageGroups[a];
-      const groupB = imageGroups[b];
-      
-      // First, prioritize groups with multiple images
-      if (groupA.images.length !== groupB.images.length) {
-        return groupB.images.length - groupA.images.length;
-      }
-      
-      // Then sort by rendered size (width * height)
-      const [widthA, heightA] = a.split('x')[0].split('×').map(Number);
-      const [widthB, heightB] = b.split('x')[0].split('×').map(Number);
-      const sizeA = widthA * heightA;
-      const sizeB = widthB * heightB;
-      
-      return sizeB - sizeA;
-    })
-    .forEach(key => {
-      sortedGroups[key] = imageGroups[key];
-    });
-  
-  console.log(`Image scan complete. Found ${Object.keys(sortedGroups).length} groups.`);
-  
-  return sortedGroups;
+    }));
+  }
+  if (problem) return;
+  if (features.snapshots && page.pageType === 'list') {
+    tools.appendChild(el('button', { class: 'btn', type: 'button', icon: 'bookmark', text: 'Aramayı kaydet', onclick: saveSearch }));
+  }
+  if (features.tkgm && page.pageType === 'detail') {
+    const { attributes, location: place } = page.listing;
+    const parcel = parcelFromFields(attributes);
+    tools.appendChild(el('button', {
+      class: 'btn', type: 'button', icon: 'map', text: 'Parseli TKGM’de aç', disabled: !parcel,
+      title: parcel ? `Ada ${parcel.ada}, Parsel ${parcel.parsel}` : 'Bu ilanda ada ve parsel bilgisi yok',
+      onclick: () => openTkgmParcel(place, parcel, (text) => { $('pageMessage').textContent = text; })
+    }));
+  }
+}
+
+async function saveSearch() {
+  try {
+    const page = await readPage();
+    if (page.pageType !== 'list') return;
+    const key = searchKey(page.url);
+    const { savedSearches = {} } = await chrome.storage.local.get('savedSearches');
+    const current = snapshotFromPage(page, new Date().toISOString());
+    const diff = savedSearches[key] ? diffSnapshots(savedSearches[key], current) : null;
+    savedSearches[key] = { ...current, lastDiff: diff };
+    await chrome.storage.local.set({ savedSearches });
+    $('pageMessage').textContent = diff
+      ? `Son kayda göre ${diff.added.length} yeni, ${diff.missing.length} görünmeyen, ${diff.priceChanged.length} fiyatı değişen ilan.`
+      : 'Arama kaydedildi. Bir sonraki kayıtta farkları gösterir.';
+  } catch (error) {
+    $('pageMessage').textContent = 'Arama kaydedilemedi.';
+  }
 }
 
 /**
- * Display image groups in the popup UI
+ * ============================================================================
+ * LIVE RATES
+ * ============================================================================
+ * The rate services are contacted only while the switch is on
  */
-function displayImageGroups(imageGroups) {
-  const statsDiv = document.getElementById('imageStats');
-  const containerDiv = document.getElementById('imageGroupsContainer');
-  const downloadAllBtn = document.getElementById('downloadAllBtn');
-  
-  // Calculate total images
-  let totalImages = 0;
-  Object.values(imageGroups).forEach(group => {
-    totalImages += group.images.length;
-  });
-  
-  // Update stats
-  statsDiv.innerHTML = `
-    <strong>${totalImages}</strong> görsel bulundu 
-    (<strong>${Object.keys(imageGroups).length}</strong> grup)
-  `;
-  
-  // Setup download all button
-  downloadAllBtn.onclick = () => downloadAllImages(imageGroups);
-  downloadAllBtn.disabled = totalImages === 0;
-  
-  // Clear previous results
-  containerDiv.innerHTML = '';
-  
-  // If no images found
-  if (totalImages === 0) {
-    containerDiv.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">🔍</div>
-        <p>Sayfada görsel bulunamadı</p>
-      </div>
-    `;
+async function refreshRates(force) {
+  const enable = $('enableRatesBtn');
+  enable.hidden = features.liveRates || features.manualRates || !currentPage || !!pageProblem(currentPage);
+  try {
+    ratesResult = await loadRates(features, force);
+  } catch (error) {
+    ratesResult = { status: 'error', rates: null };
+  }
+  const price = !currentPage || pageProblem(currentPage)
+    ? null
+    : currentPage.pageType === 'detail'
+      ? currentPage.listing.price
+      : pageMedianPrice(pageRecords(currentPage));
+  const strip = $('pageRates');
+  if (price && ratesResult.status !== 'off') renderRatesStrip(strip, price, ratesResult, () => refreshRates(true));
+  else strip.textContent = '';
+}
+
+$('enableRatesBtn').addEventListener('click', () => setFeature(getFeature('liveRates'), true));
+
+/**
+ * ============================================================================
+ * CURRENT PAGE EXPORT
+ * ============================================================================
+ */
+async function withFreshPage(action) {
+  const message = $('pageMessage');
+  try {
+    const page = await readPage();
+    const problem = pageProblem(page);
+    if (problem) {
+      message.textContent = problem;
+      return;
+    }
+    await action(page);
+  } catch (error) {
+    console.error('Error reading page:', error);
+    message.textContent = 'Veri okunamadı. Sayfayı yenileyip tekrar dene.';
+  }
+}
+
+$('downloadCsvBtn').addEventListener('click', () => withFreshPage(async (page) => {
+  const context = await exportContext(features, ratesResult.rates);
+  const rows = page.pageType === 'list'
+    ? listPageToRows(page, context)
+    : recordsToRows([{ ...detailToRecord(page.listing), priceHistory: [] }], [], context);
+  downloadCsv(rows, exportFileName(page, 'csv', todayIso()));
+  $('pageMessage').textContent = page.pageType === 'list' ? `${page.rows.length} ilan indirildi.` : 'İlan indirildi.';
+}));
+
+$('downloadJsonBtn').addEventListener('click', () => withFreshPage(async (page) => {
+  downloadJson(page, exportFileName(page, 'json', todayIso()));
+  $('pageMessage').textContent = 'JSON indirildi.';
+}));
+
+$('addPageBtn').addEventListener('click', () => withFreshPage(async (page) => {
+  const result = await chrome.runtime.sendMessage({ action: 'basket-add-page', data: { page } });
+  if (result.status !== 'success') {
+    $('pageMessage').textContent = 'Sepete eklenemedi.';
     return;
   }
-  
-  // Create group elements
-  Object.entries(imageGroups).forEach(([groupKey, groupData]) => {
-    const groupDiv = document.createElement('div');
-    groupDiv.className = 'image-group';
-    
-    const groupHeader = document.createElement('div');
-    groupHeader.className = 'group-header';
-    
-    const groupInfo = document.createElement('div');
-    groupInfo.className = 'group-info';
-    groupInfo.innerHTML = `
-      <div class="group-title">${groupData.renderedDimensions} (${groupData.type.toUpperCase()})</div>
-      <div>${groupData.images.length} görsel</div>
-    `;
-    
-    const downloadButton = document.createElement('button');
-    downloadButton.className = 'download-group-btn';
-    downloadButton.textContent = '⬇️ İndir';
-    downloadButton.onclick = () => downloadImageGroup(groupData.images, groupKey);
-    
-    groupHeader.appendChild(groupInfo);
-    groupHeader.appendChild(downloadButton);
-    
-    // Create image grid (show first 8 images)
-    const imageGrid = document.createElement('div');
-    imageGrid.className = 'image-grid';
-    
-    const imagesToShow = groupData.images.slice(0, 8);
-    imagesToShow.forEach((imageData, index) => {
-      const imageItem = document.createElement('div');
-      imageItem.className = 'image-item';
-      
-      const img = document.createElement('img');
-      img.src = imageData.url;
-      img.alt = imageData.alt || 'Image';
-      img.title = `${imageData.actualWidth}×${imageData.actualHeight}`;
-      
-      const singleDownloadBtn = document.createElement('button');
-      singleDownloadBtn.className = 'download-single-btn';
-      singleDownloadBtn.textContent = '⬇️';
-      singleDownloadBtn.title = 'Bu görseli indir';
-      singleDownloadBtn.onclick = (e) => {
-        e.stopPropagation();
-        downloadSingleImage(imageData);
-      };
-      
-      imageItem.appendChild(img);
-      imageItem.appendChild(singleDownloadBtn);
-      imageGrid.appendChild(imageItem);
+  const { counts } = result;
+  $('pageMessage').textContent = `Sepet: ${counts.new} yeni, ${counts.updated} güncellendi, ${counts.priceChanged} fiyatı değişti.`;
+  renderBasket();
+}));
+
+/**
+ * ============================================================================
+ * BASKET
+ * ============================================================================
+ */
+async function loadBasket() {
+  const { basket = {}, hiddenColumns = [] } = await chrome.storage.local.get(['basket', 'hiddenColumns']);
+  const records = Object.values(basket).sort((a, b) => (b.lastSeen || '').localeCompare(a.lastSeen || ''));
+  return { records, hiddenColumns };
+}
+
+const openWorkspace = () => chrome.tabs.create({ url: 'dashboard.html' });
+$('openWorkspaceBtn').addEventListener('click', openWorkspace);
+$('basketOpenBtn').addEventListener('click', openWorkspace);
+
+async function renderBasket() {
+  const { records } = await loadBasket();
+  const withDetail = records.filter((record) => record.hasDetail).length;
+  const count = $('basketCount');
+  count.hidden = records.length === 0;
+  count.textContent = formatNumber(records.length);
+  $('basketSummary').textContent = records.length === 0 ? 'Sepet boş' : `${formatNumber(records.length)} ilan`;
+  $('basketCaption').textContent = records.length === 0
+    ? 'Gezdiğin sayfaları Sayfa bölümünden ekle.'
+    : `${withDetail} ilanın tüm detayı var`;
+  ['basketCsvBtn', 'basketJsonBtn'].forEach((id) => { $(id).disabled = records.length === 0; });
+  renderStats($('basketStats'), records);
+  $('basketStats').hidden = $('basketStats').childElementCount === 0;
+
+  const list = $('basketList');
+  list.textContent = '';
+  list.hidden = records.length === 0;
+  records.slice(0, 5).forEach((record) => {
+    list.appendChild(el('div', { class: 'basket-row' }, [
+      el('span', { class: 'basket-row-title', text: record.title, title: record.title }),
+      el('span', { class: 'basket-row-price', text: formatPrice(record.price) })
+    ]));
+  });
+}
+
+$('basketCsvBtn').addEventListener('click', async () => {
+  const { records, hiddenColumns } = await loadBasket();
+  if (records.length === 0) return;
+  const context = await exportContext(features, ratesResult.rates);
+  downloadCsv(recordsToRows(records, hiddenColumns, context), `sahibinden_sepet_${todayIso()}.csv`);
+  $('basketMessage').textContent = `${records.length} ilan indirildi.`;
+});
+
+$('basketJsonBtn').addEventListener('click', async () => {
+  const { records } = await loadBasket();
+  if (records.length === 0) return;
+  downloadJson(records, `sahibinden_sepet_${todayIso()}.json`);
+  $('basketMessage').textContent = 'JSON indirildi.';
+});
+
+/**
+ * ============================================================================
+ * IMAGE DOWNLOAD
+ * ============================================================================
+ */
+let imageFolder = 'images';
+
+$('scanImagesBtn').addEventListener('click', async () => {
+  const scanButton = $('scanImagesBtn');
+  scanButton.disabled = true;
+  try {
+    const tab = await getActiveTab();
+    const { folder, groups } = await runInTab(tab.id, 'scanPageForImages');
+    imageFolder = folder;
+    displayImageGroups(groups);
+    $('emptyState').hidden = true;
+  } catch (error) {
+    console.error('Error scanning images:', error);
+    $('emptyState').hidden = false;
+    $('emptyState').textContent = 'Bu sayfa taranamadı. Sayfayı yenileyip tekrar dene.';
+  }
+  scanButton.disabled = false;
+});
+
+async function startImageDownload(images, summary) {
+  const result = await chrome.runtime.sendMessage({
+    action: 'download-images',
+    data: { images, folder: imageFolder }
+  });
+  const stats = $('imageStats');
+  if (result.status === 'started') {
+    stats.textContent = `İndiriliyor: 0/${result.totalImages}. Pencereyi kapatsan da devam eder.`;
+  } else {
+    stats.textContent = result.error === 'busy' ? 'Önceki indirme hâlâ sürüyor.' : summary;
+  }
+}
+
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.imageProgress) {
+    const { done, total, errorCount } = changes.imageProgress.newValue;
+    const errors = errorCount > 0 ? `, ${errorCount} hata` : '';
+    $('imageStats').textContent = done === total
+      ? `İndirme bitti: ${total - errorCount}/${total}${errors}`
+      : `İndiriliyor: ${done}/${total}${errors}. Pencereyi kapatsan da devam eder.`;
+  }
+  if (changes.basket) renderBasket();
+  if (changes.guardedState) refreshGuarded();
+});
+
+function displayImageGroups(imageGroups) {
+  const containerDiv = $('imageGroupsContainer');
+  const downloadAllBtn = $('downloadAllBtn');
+  const groups = Object.values(imageGroups);
+  const allImages = groups.flatMap((group) => group.images);
+  const summary = `${allImages.length} görsel bulundu`;
+
+  $('imageResults').hidden = false;
+  $('imageStats').textContent = summary;
+  downloadAllBtn.disabled = allImages.length === 0;
+  downloadAllBtn.onclick = () => startImageDownload(allImages, summary);
+
+  containerDiv.textContent = '';
+  if (allImages.length === 0) {
+    containerDiv.appendChild(el('p', { class: 'empty-text', text: 'Sayfada görsel bulunamadı.' }));
+    return;
+  }
+
+  groups.forEach((group) => {
+    const grid = el('div', { class: 'image-grid' });
+    group.images.slice(0, 8).forEach((imageData) => {
+      grid.appendChild(el('div', { class: 'image-item' }, [
+        el('img', { src: imageData.url, alt: imageData.alt || '', loading: 'lazy' }),
+        el('button', {
+          class: 'image-download', type: 'button', icon: 'download',
+          title: 'Bu görseli indir', 'aria-label': 'Bu görseli indir',
+          onclick: () => startImageDownload([imageData], summary)
+        })
+      ]));
     });
-    
-    // Show "more" indicator if there are more than 8 images
-    if (groupData.images.length > 8) {
-      const moreDiv = document.createElement('div');
-      moreDiv.className = 'image-item';
-      moreDiv.style.background = 'rgba(255, 215, 0, 0.2)';
-      moreDiv.style.display = 'flex';
-      moreDiv.style.alignItems = 'center';
-      moreDiv.style.justifyContent = 'center';
-      moreDiv.style.fontWeight = 'bold';
-      moreDiv.style.fontSize = '14px';
-      moreDiv.style.color = '#FF6B00';
-      moreDiv.textContent = `+${groupData.images.length - 8}`;
-      imageGrid.appendChild(moreDiv);
+    if (group.images.length > 8) {
+      grid.appendChild(el('div', { class: 'image-item image-more', text: `+${group.images.length - 8}` }));
     }
-    
-    groupDiv.appendChild(groupHeader);
-    groupDiv.appendChild(imageGrid);
-    containerDiv.appendChild(groupDiv);
+    containerDiv.appendChild(el('div', { class: 'image-group' }, [
+      el('div', { class: 'group-header' }, [
+        el('div', {}, [
+          el('h2', { text: group.renderedDimensions }),
+          el('p', { class: 'small muted', text: `${group.images.length} görsel` })
+        ]),
+        el('button', {
+          class: 'btn', type: 'button', icon: 'download', text: 'İndir',
+          onclick: () => startImageDownload(group.images, summary)
+        })
+      ]),
+      grid
+    ]));
   });
 }
 
 /**
- * Download a single image
+ * ============================================================================
+ * EXPERIMENTAL TOOLS
+ * ============================================================================
  */
-async function downloadSingleImage(imageData) {
-  try {
-    // Get hostname for filename
-    const hostname = window.location.hostname.replace('www.', '');
-    
-    // Get file extension
-    const extension = imageData.type !== 'unknown' ? imageData.type : 'jpg';
-    
-    // Create filename with timestamp
-    const timestamp = Date.now();
-    const filename = `${hostname}_image_${timestamp}.${extension}`;
-    
-    // Use Chrome downloads API
-    await chrome.downloads.download({
-      url: imageData.url,
-      filename: filename,
-      saveAs: false
-    });
-    
-    console.log(`Downloaded: ${filename}`);
-    
-  } catch (error) {
-    console.error('Error downloading image:', error);
-    alert('Görsel indirilirken bir hata oluştu.');
-  }
-}
+const GUARDED_TOOLS = [
+  { feature: 'readWithoutOpening', label: 'Bu listedeki ilanları oku' },
+  { feature: 'autoPagination', label: 'Sonraki sayfaları oku' },
+  { feature: 'bulkPriceHistory', label: 'Fiyat geçmişini al' }
+];
 
-/**
- * Download all images in a group
- */
-async function downloadImageGroup(images, groupKey) {
+async function startGuardedTool(feature) {
+  const message = $('guardedMessage');
   try {
-    // Get hostname for folder name
-    const hostname = window.location.hostname.replace('www.', '');
-    const timestamp = Math.floor(Date.now() / 1000);
-    const folderName = `${hostname}_images_${timestamp}`;
-    
-    // Batch download with delay to avoid overwhelming the browser
-    const BATCH_SIZE = 5;
-    const DELAY_MS = 300;
-    
-    for (let i = 0; i < images.length; i += BATCH_SIZE) {
-      const batch = images.slice(i, i + BATCH_SIZE);
-      
-      // Download batch
-      await Promise.all(batch.map(async (imageData, batchIndex) => {
-        const index = i + batchIndex;
-        const extension = imageData.type !== 'unknown' ? imageData.type : 'jpg';
-        
-        // Clean filename
-        const filename = `${folderName}/${timestamp}_${index}.${extension}`;
-        
-        try {
-          await chrome.downloads.download({
-            url: imageData.url,
-            filename: filename,
-            saveAs: false
-          });
-        } catch (err) {
-          console.error(`Error downloading image ${index}:`, err);
-        }
-      }));
-      
-      // Wait before next batch
-      if (i + BATCH_SIZE < images.length) {
-        await new Promise(resolve => setTimeout(resolve, DELAY_MS));
-      }
-    }
-    
-    console.log(`Downloaded ${images.length} images to folder: ${folderName}`);
-    alert(`${images.length} görsel indirildi!`);
-    
-  } catch (error) {
-    console.error('Error downloading image group:', error);
-    alert('Görseller indirilirken bir hata oluştu.');
-  }
-}
-
-/**
- * Download all images from all groups
- */
-async function downloadAllImages(imageGroups) {
-  try {
-    // Collect all images from all groups
-    const allImages = [];
-    Object.values(imageGroups).forEach(group => {
-      allImages.push(...group.images);
-    });
-    
-    if (allImages.length === 0) {
-      alert('İndirilecek görsel bulunamadı.');
+    const page = await readPage();
+    if (page.pageType !== 'list' || page.rows.length === 0) {
+      message.textContent = 'Önce bir liste sayfası aç.';
       return;
     }
-    
-    // Confirm with user
-    const confirmed = confirm(`Toplam ${allImages.length} görsel indirilecek. Devam etmek istiyor musunuz?`);
-    if (!confirmed) {
-      return;
-    }
-    
-    // Disable button during download
-    const downloadAllBtn = document.getElementById('downloadAllBtn');
-    const originalText = downloadAllBtn.innerHTML;
-    downloadAllBtn.disabled = true;
-    downloadAllBtn.innerHTML = '<span class="loading-spinner"></span> İndiriliyor...';
-    
-    // Get hostname for folder name
-    const hostname = window.location.hostname.replace('www.', '');
-    const timestamp = Math.floor(Date.now() / 1000);
-    const folderName = `${hostname}_all_images_${timestamp}`;
-    
-    // Batch download with delay
-    const BATCH_SIZE = 5;
-    const DELAY_MS = 300;
-    let successCount = 0;
-    let errorCount = 0;
-    
-    for (let i = 0; i < allImages.length; i += BATCH_SIZE) {
-      const batch = allImages.slice(i, i + BATCH_SIZE);
-      
-      // Download batch
-      const results = await Promise.allSettled(
-        batch.map(async (imageData, batchIndex) => {
-          const index = i + batchIndex;
-          const extension = imageData.type !== 'unknown' ? imageData.type : 'jpg';
-          const filename = `${folderName}/${timestamp}_${index}.${extension}`;
-          
-          return chrome.downloads.download({
-            url: imageData.url,
-            filename: filename,
-            saveAs: false
-          });
-        })
-      );
-      
-      // Count results
-      results.forEach(result => {
-        if (result.status === 'fulfilled') {
-          successCount++;
-        } else {
-          errorCount++;
-          console.error('Download failed:', result.reason);
-        }
-      });
-      
-      // Update button text with progress
-      const progress = Math.round(((i + batch.length) / allImages.length) * 100);
-      downloadAllBtn.innerHTML = `<span class="loading-spinner"></span> ${progress}% (${i + batch.length}/${allImages.length})`;
-      
-      // Wait before next batch
-      if (i + BATCH_SIZE < allImages.length) {
-        await new Promise(resolve => setTimeout(resolve, DELAY_MS));
-      }
-    }
-    
-    // Reset button
-    downloadAllBtn.disabled = false;
-    downloadAllBtn.innerHTML = originalText;
-    
-    // Show result
-    if (errorCount > 0) {
-      alert(`${successCount} görsel başarıyla indirildi, ${errorCount} hata oluştu.`);
+    const { basket = {} } = await chrome.storage.local.get('basket');
+    const tabId = currentTab.id;
+    let request;
+    if (feature === 'readWithoutOpening') {
+      const listings = page.rows
+        .filter((row) => row.url && !(basket[row.id] && basket[row.id].hasDetail))
+        .map((row) => ({ id: row.id, url: row.url }));
+      request = { action: 'enrich-start', data: { tabId, listings } };
+    } else if (feature === 'autoPagination') {
+      request = { action: 'paginate-start', data: { tabId, page } };
     } else {
-      alert(`Tüm görseller başarıyla indirildi! (${successCount} görsel)`);
+      // Only listings already in the basket, since that is where the history gets saved
+      const ids = page.rows.map((row) => row.id).filter((id) => basket[id] && !basket[id].remoteHistory);
+      request = { action: 'history-start', data: { tabId, ids } };
     }
-    
-    console.log(`Downloaded all images. Success: ${successCount}, Errors: ${errorCount}`);
-    
+    const result = await chrome.runtime.sendMessage(request);
+    if (result.status === 'error') message.textContent = result.error;
+    refreshGuarded();
   } catch (error) {
-    console.error('Error downloading all images:', error);
-    alert('Görseller indirilirken bir hata oluştu.');
-    
-    // Reset button on error
-    const downloadAllBtn = document.getElementById('downloadAllBtn');
-    downloadAllBtn.disabled = false;
-    downloadAllBtn.innerHTML = '⬇️ Hepsini İndir';
+    message.textContent = 'Sayfa okunamadı.';
   }
 }
+
+async function refreshGuarded() {
+  const status = await chrome.runtime.sendMessage({ action: 'guarded-status' });
+  if (!status || status.status === 'error') return;
+  const cooling = status.cooldownUntil > Date.now();
+  const enabled = GUARDED_TOOLS.filter((tool) => features[tool.feature]);
+  const holder = $('guardedTools');
+  holder.textContent = '';
+  $('guardedOff').hidden = enabled.length > 0;
+
+  if (status.running) {
+    holder.appendChild(el('button', {
+      class: 'btn btn-danger', type: 'button', icon: 'stop', text: 'Durdur',
+      onclick: () => chrome.runtime.sendMessage({ action: 'guarded-stop' })
+    }));
+  } else {
+    enabled.forEach((tool) => {
+      holder.appendChild(el('button', {
+        class: 'btn', type: 'button', icon: 'play', text: tool.label, disabled: cooling,
+        onclick: () => startGuardedTool(tool.feature)
+      }));
+    });
+  }
+  $('guardedLimits').textContent = enabled.length > 0
+    ? `Çalışma başına en fazla ${status.maxListingsPerRun} ilan veya ${status.maxPagesPerRun} sayfa, günde ${status.maxPerDay} istek, istekler arası ${status.delaySeconds} sn. Bugün: ${status.usedToday}.`
+    : '';
+  if (status.running) {
+    $('guardedMessage').textContent = `${status.label}: ${status.done}/${status.total}. Bu sekmede kal.`;
+  } else if (cooling) {
+    const minutes = Math.ceil((status.cooldownUntil - Date.now()) / 60000);
+    $('guardedMessage').textContent = `${status.lastMessage} Kalan süre: ${minutes} dk.`;
+  } else {
+    $('guardedMessage').textContent = status.lastMessage;
+  }
+}
+
+/**
+ * ============================================================================
+ * SETTINGS
+ * ============================================================================
+ */
+function renderFeatureList() {
+  renderFeatureSettings($('featureList'), features, (text) => { $('settingsMessage').textContent = text; });
+  const onCount = FEATURES.filter((feature) => features[feature.id]).length;
+  const badge = $('featureCount');
+  badge.hidden = onCount === 0;
+  badge.textContent = String(onCount);
+}
+
+$('allOffBtn').addEventListener('click', async () => {
+  await resetAllFeatures();
+  await chrome.runtime.sendMessage({ action: 'features-changed' });
+  $('settingsMessage').textContent = 'Tüm özellikler kapatıldı.';
+});
