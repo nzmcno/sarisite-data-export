@@ -229,6 +229,13 @@ test('images download one at a time', async () => {
   assert.deepStrictEqual(worker.log.downloads.map((item) => item.filename), ['sahibinden_1/a_1.jpg', 'sahibinden_1/a_2.jpg', 'sahibinden_1/a_3.jpg']);
 });
 
+test('one photo saves under its listing number', async () => {
+  const worker = loadWorker();
+  await worker.send('download-images', { images: [{ url: 'https://i/x5_1.jpg', filename: 'ilan_1400000001', type: 'jpg' }], folder: 'sahibinden_fotograflar' });
+  await worker.settle();
+  assert.deepStrictEqual(worker.log.downloads.map((item) => item.filename), ['sahibinden_fotograflar/ilan_1400000001.jpg']);
+});
+
 test('a backup can only be restored with its switch on', async () => {
   const data = { basket: { 1: { id: '1', title: 'A' } }, annotations: {}, savedSearches: {}, hiddenColumns: [] };
   const off = loadWorker();

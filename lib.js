@@ -223,6 +223,17 @@ function basketColumns(records, context) {
       columns.push([name, (r) => (computedFields(r, derived).find(([key]) => key === name) || [])[1]]);
     });
   }
+  const factAt = (context && context.now) || Date.now();
+  const factsOf = (r) => (isVehicle(r) ? vehicleFacts(r, factAt) : isRealEstate(r) ? emlakFacts(r, factAt) : []);
+  const factNames = [];
+  records.forEach((record) => {
+    factsOf(record).forEach(([name]) => {
+      if (!factNames.includes(name) && name !== 'Fiyat/m²' && !name.startsWith('Açıklamada ')) factNames.push(name);
+    });
+  });
+  factNames.filter((name) => !columns.some(([existing]) => existing === name)).forEach((name) => {
+    columns.push([name, (r) => (factsOf(r).find(([label]) => label === name) || [])[1]]);
+  });
   if (on.extraData) {
     columns.push(
       ['Mağaza', (r) => r.storeName],
@@ -520,7 +531,12 @@ function parseDescription(text) {
     ['Su var', /\bsu\s*(var|mevcut|hattı)/],
     ['Bakımlı', /bakımlı|bakımları\s*yapıl/],
     ['Boyasız', /boyasız/],
-    ['Değişensiz', /değişensiz/]
+    ['Değişensiz', /değişensiz/],
+    ['Hatasız', /hatasız/],
+    ['Kazasız', /kazasız/],
+    ['Yetkili servis', /yetkili\s*servis/],
+    ['Garantili', /garantili|garantisi\s*(var|devam)/],
+    ['LPG', /\blpg\b/]
   ];
   const found = keywords.filter(([, pattern]) => pattern.test(lower)).map(([label]) => label);
   if (found.length > 0) result.keywords = found.join(', ');
@@ -670,12 +686,14 @@ function technicalColumnNames(records) {
   return names;
 }
 
+/** "Volkswagen Golf". The results table can show the series alone, and the breadcrumb fills the rest. */
 function vehiclePeerKey(record) {
   const fields = record.fields || {};
-  if (fields.Marka && fields.Seri) return `${fields.Marka} ${fields.Seri}`;
   const category = record.category || [];
-  if (category.length >= 4) return `${category[2]} ${category[3]}`;
-  return fields.Marka || null;
+  const brand = fields.Marka || category[2];
+  const series = fields.Seri || category[3];
+  if (brand && series) return `${brand} ${series}`;
+  return brand || series || null;
 }
 
 function middleOf(values) {
@@ -718,10 +736,7 @@ function vehicleComparison(record, records) {
   };
 }
 
-function vehicleSeriesName(record) {
-  const fields = record.fields || {};
-  return `${fields.Marka || ''} ${fields.Seri || ''}`.trim();
-}
+const vehicleSeriesName = (record) => vehiclePeerKey(record) || '';
 
 /** The vehicles in the basket after the series and damage filters, sorted. Missing values go last. */
 function filterVehicles(records, filters) {
@@ -748,6 +763,7 @@ function filterVehicles(records, filters) {
     }
   };
   const read = values[sortBy];
+  if (!read) return vehicles.filter(passes);
   return vehicles.filter(passes).sort((a, b) => {
     const [first, second] = [read(a), read(b)];
     if (first === null || first === undefined) return second === null || second === undefined ? 0 : 1;
@@ -777,6 +793,235 @@ function vehicleGroups(records) {
       medianKm: middleOf(members.map((record) => toNumber((record.fields || {}).KM)))
     };
   }).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key, 'tr'));
+}
+
+/**
+ * ============================================================================
+ * EXACT FACTS
+ * ============================================================================
+ * Only arithmetic on published figures, or what the seller wrote. Nothing is estimated.
+ */
+const trNumber = (value, digits) => Number(value).toLocaleString('tr-TR', { maximumFractionDigits: digits || 0 });
+const TURKISH_MONTHS = ['ocak', 'şubat', 'mart', 'nisan', 'mayıs', 'haziran', 'temmuz', 'ağustos', 'eylül', 'ekim', 'kasım', 'aralık'];
+
+/** The inspection date as the seller wrote it: "Vize 02/2027", "muayene 2027-02" or "muayene Şubat 2027" */
+function parseInspection(text, now) {
+  const lower = String(text == null ? '' : text).toLocaleLowerCase('tr');
+  const lead = '(?:muayene|vize)\\S*[^\\d\\n]{0,25}?';
+  let month = null;
+  let year = null;
+  const monthFirst = lower.match(new RegExp(`${lead}(?:\\d{1,2}[./-])?(\\d{1,2})[./-](\\d{4})`, 'u'));
+  const yearFirst = lower.match(new RegExp(`${lead}(\\d{4})[./-](\\d{1,2})`, 'u'));
+  const named = lower.match(new RegExp(`(?:muayene|vize)\\S*[^\\n]{0,25}?(${TURKISH_MONTHS.join('|')})\\s*(\\d{4})`, 'u'));
+  if (monthFirst) [month, year] = [Number(monthFirst[1]), Number(monthFirst[2])];
+  else if (yearFirst) [year, month] = [Number(yearFirst[1]), Number(yearFirst[2])];
+  else if (named) [month, year] = [TURKISH_MONTHS.indexOf(named[1]) + 1, Number(named[2])];
+  if (!month || month > 12 || year < 2000 || year > 2100) return null;
+  const today = new Date(now || Date.now());
+  const monthsLeft = (year - today.getFullYear()) * 12 + (month - (today.getMonth() + 1));
+  return { month, year, monthsLeft, text: `${String(month).padStart(2, '0')}/${year}` };
+}
+
+/** A rent the seller wrote, with an amount clearly in money: "kira getirisi 25.000 TL", "kirası 25 bin" */
+function parseRent(text) {
+  const lower = String(text == null ? '' : text).toLocaleLowerCase('tr');
+  const match = lower.match(/(?<!\p{L})kira(?!l)\p{L}*(?:\s+(?:getirisi|bedeli|geliri))?[^\d\n]{0,15}(\d{1,3}(?:\.\d{3})+|\d{4,7}|\d{1,3})\s*(bin\b|tl\b|₺)?/u);
+  if (!match) return null;
+  const hasThousands = /\./.test(match[1]);
+  if (!match[2] && !hasThousands) return null;
+  const amount = Number(match[1].replace(/\./g, '')) * (match[2] && match[2].startsWith('bin') ? 1000 : 1);
+  return amount >= 1000 ? amount : null;
+}
+
+function pickComputed(record, now, names) {
+  const computed = computedFields(record, { now });
+  return names.map((name) => computed.find(([label]) => label === name)).filter(Boolean);
+}
+
+function priceChangeFact(record) {
+  const first = (record.priceHistory || [])[0];
+  if (!first || !record.price || first.currency !== record.price.currency || !first.amount) return [];
+  const change = percentFrom(record.price.amount, first.amount);
+  return [['İlk Görülen Fiyat', `${trNumber(first.amount)} ${first.currency} (${change > 0 ? '+' : change < 0 ? '-' : ''}%${Math.abs(change)})`]];
+}
+
+function descriptionFacts(record) {
+  const parsed = parseDescription(record.description);
+  const facts = [];
+  if (parsed.tramer !== undefined) facts.push(['Açıklamada tramer', typeof parsed.tramer === 'number' ? `${trNumber(parsed.tramer)} TL` : parsed.tramer]);
+  if (parsed.facade) facts.push(['Açıklamada cephe', parsed.facade]);
+  if (parsed.keywords) facts.push(['Açıklamada geçenler', parsed.keywords]);
+  if (parsed.extras) facts.push(['Açıklamada ekstralar', parsed.extras]);
+  return facts;
+}
+
+function vehicleFacts(record, now) {
+  const fields = record.fields || {};
+  const amount = record.price && record.price.amount;
+  const currency = record.price && record.price.currency;
+  const km = toNumber(fields.KM);
+  const power = String(fields['Motor Gücü'] || '').match(/^(\d+)\s*hp$/i);
+  const inspection = parseInspection(record.description, now);
+  const facts = pickComputed(record, now, ['Araç Yaşı', 'Yıllık KM', 'Yayında (gün)']).map(([label, value]) => [label, trNumber(value, 1)]);
+  if (amount && km) facts.push(['KM Başına Fiyat', `${trNumber(amount / km, 1)} ${currency}`]);
+  if (amount && power) facts.push(['Beygir Başına Fiyat', `${trNumber(amount / Number(power[1]))} ${currency}`]);
+  if (inspection) {
+    const left = inspection.monthsLeft;
+    facts.push(['Muayene (Açıklamada)', `${inspection.text}, ${left > 0 ? `${left} ay kaldı` : left === 0 ? 'bu ay' : 'tarihi geçmiş'}`]);
+  }
+  return [...facts, ...priceChangeFact(record), ...descriptionFacts(record)];
+}
+
+/** The biggest copy of a photo. Showcase thumbnails have no such copy, so the page falls back to the original. */
+function largePhotoUrl(url) {
+  return String(url || '').replace(/\/l?thmb_/, '/x5_');
+}
+
+function recordPhoto(record) {
+  return (record.photos && record.photos[0]) || largePhotoUrl(record.image);
+}
+
+function recordPlace(record) {
+  const fields = record.fields || {};
+  if (fields['İl'] && fields['İlçe']) return `${fields['İl']} / ${fields['İlçe']}`;
+  return record.location || '';
+}
+
+/** The columns of the site's own vehicle table, in its order */
+function vehicleSpecs(record) {
+  const fields = record.fields || {};
+  const km = toNumber(fields.KM);
+  return [
+    ['Marka', fields.Marka],
+    ['Seri', fields.Seri],
+    ['Model', fields.Model],
+    ['Yıl', fields['Yıl']],
+    ['KM', km === null ? '' : trNumber(km)],
+    ['Renk', fields.Renk],
+    ['İlan Tarihi', record.dateRaw],
+    ['İl / İlçe', recordPlace(record)]
+  ].filter(([name, value]) => value || name !== 'Marka');
+}
+
+/**
+ * ============================================================================
+ * REAL ESTATE
+ * ============================================================================
+ * Column names differ by kind of property, so each kind lists what matters to it
+ * and anything else the results table showed is kept after those.
+ */
+const EMLAK_SUBTYPES = [
+  { id: 'konut', label: 'Konut', slug: 'emlak-konut', fields: ['Emlak Tipi', 'm² (Brüt)', 'm² (Net)', 'Oda Sayısı', 'Bina Yaşı', 'Bulunduğu Kat', 'Kat Sayısı', 'Isıtma', 'Aidat (TL)', 'Tapu Durumu', 'Kimden'] },
+  { id: 'isyeri', label: 'İş Yeri', slug: 'is-yeri', fields: ['Emlak Tipi', 'm²', 'm² (Brüt)', 'm² (Net)', 'Bölüm & Oda Sayısı', 'Bina Yaşı', 'Isıtma', 'Aidat (TL)', 'Tapu Durumu', 'Kimden'] },
+  { id: 'arsa', label: 'Arsa', slug: 'arsa', fields: ['Emlak Tipi', 'm²', 'm² Fiyatı', 'İmar Durumu', 'Ada No', 'Parsel No', 'Kaks (Emsal)', 'Gabari', 'Tapu Durumu', 'Kimden'] },
+  { id: 'proje', label: 'Konut Projeleri', slug: 'emlak-projeler', fields: ['Emlak Tipi', 'm² (Brüt)', 'm² (Net)', 'Oda Sayısı', 'Kimden'] },
+  { id: 'bina', label: 'Bina', slug: 'bina', fields: ['Emlak Tipi', 'Kat Sayısı', 'Her Kattaki Daire', 'm²', 'Bina Yaşı', 'Isıtma', 'Tapu Durumu', 'Kimden'] },
+  { id: 'turistik', label: 'Turistik Tesis', slug: 'emlak-turistik-tesis', fields: ['Emlak Tipi', 'Oda Sayısı', 'Yatak Sayısı', 'm²', 'Kapalı Alan', 'Açık Alan', 'Tapu Durumu', 'Kimden'] }
+];
+const EMLAK_OTHER = { id: 'diger', label: 'Diğer', fields: ['Emlak Tipi', 'm²', 'm² (Brüt)', 'Tapu Durumu', 'Kimden'] };
+const EMLAK_HIDDEN_FIELDS = ['İl', 'İlçe', 'Mahalle', 'Semt', 'İlçe / Semt', 'İl / İlçe', 'Fiyat', 'İlan Başlığı'];
+
+const foldedLabel = (text) => foldText(String(text || '').trim());
+
+function isRealEstate(record) {
+  if ((record.category || []).length > 0) return foldedLabel(record.category[0]) === 'emlak';
+  return /\/ilan\/emlak-/.test(record.url || '');
+}
+
+function emlakSubtype(record) {
+  const name = foldedLabel((record.category || [])[1]);
+  const found = EMLAK_SUBTYPES.find((subtype) => foldedLabel(subtype.label) === name);
+  if (found) return found;
+  const fromUrl = String(record.url || '').match(/\/ilan\/(?:emlak-)?(konut|is-yeri|arsa|bina|turistik-tesis|projeler)/);
+  if (fromUrl) {
+    const key = { konut: 'konut', 'is-yeri': 'isyeri', arsa: 'arsa', bina: 'bina', 'turistik-tesis': 'turistik', projeler: 'proje' }[fromUrl[1]];
+    return EMLAK_SUBTYPES.find((subtype) => subtype.id === key);
+  }
+  return EMLAK_OTHER;
+}
+
+/** [label, value] for one listing: its kind's own fields, then whatever else its table showed */
+function emlakSpecs(record) {
+  const fields = record.fields || {};
+  const { fields: preferred } = emlakSubtype(record);
+  const specs = preferred.filter((name) => fields[name]).map((name) => [name, fields[name]]);
+  if (!record.hasDetail) {
+    Object.keys(fields)
+      .filter((name) => !preferred.includes(name) && !EMLAK_HIDDEN_FIELDS.includes(name) && fields[name])
+      .forEach((name) => specs.push([name, fields[name]]));
+  }
+  specs.push(['İlan Tarihi', record.dateRaw], ['Konum', recordPlace(record)]);
+  return specs.filter(([, value]) => value);
+}
+
+function emlakFacts(record, now) {
+  const unit = unitPrice(record);
+  const amount = record.price && record.price.amount;
+  const currency = record.price && record.price.currency;
+  const facts = [];
+  if (unit) facts.push(['Fiyat/m²', `${trNumber(unit)} ${currency}`]);
+  pickComputed(record, now, ['Yayında (gün)', 'Net/Brüt (%)', 'm² Başına Aidat', 'Emsal İnşaat Alanı (m²)', 'İnşaat m² Maliyeti'])
+    .forEach(([label, value]) => facts.push([label, trNumber(value, 1)]));
+  const rent = parseRent(record.description);
+  const forRent = (record.category || []).some((name) => foldedLabel(name) === 'kiralik');
+  if (rent && !forRent) {
+    facts.push(['Açıklamadaki Kira', `${trNumber(rent)} TL`]);
+    if (amount && currency === 'TL') facts.push(['Kira Geri Dönüşü', `${trNumber(amount / (rent * 12), 1)} yıl`]);
+  }
+  return [...facts, ...priceChangeFact(record), ...descriptionFacts(record)];
+}
+
+/** Filters by kind and sorts. "page" keeps the order the site listed them in. */
+function filterEmlak(records, filters) {
+  const { subtype = '', sortBy = 'page', descending = false } = filters || {};
+  const matching = records.filter((record) => isRealEstate(record) && (!subtype || emlakSubtype(record).id === subtype));
+  const values = {
+    price: (record) => (record.price ? record.price.amount : null),
+    unit: unitPrice,
+    date: (record) => (record.dateIso ? Date.parse(record.dateIso) : null)
+  };
+  const read = values[sortBy];
+  if (!read) return matching;
+  return matching.sort((a, b) => {
+    const [first, second] = [read(a), read(b)];
+    if (first === null || first === undefined) return second === null || second === undefined ? 0 : 1;
+    if (second === null || second === undefined) return -1;
+    return descending ? second - first : first - second;
+  });
+}
+
+/** How many listings of each kind, in the site's order. Empty kinds stay out. */
+function emlakCounts(records) {
+  const estate = records.filter(isRealEstate);
+  return [...EMLAK_SUBTYPES, EMLAK_OTHER]
+    .map((subtype) => ({ ...subtype, count: estate.filter((record) => emlakSubtype(record).id === subtype.id).length }))
+    .filter((subtype) => subtype.count > 0);
+}
+
+/** A kind's address on the site, keeping the city when the open page is one of these category pages */
+function emlakCategoryLink(subtype, pageUrl) {
+  let city = '';
+  try {
+    const parts = new URL(pageUrl).pathname.split('/').filter(Boolean);
+    if (parts.length === 2 && EMLAK_SUBTYPES.some((item) => item.slug === parts[0]) && /^[a-z0-9-]+$/.test(parts[1])) [, city] = parts;
+  } catch (error) {
+    city = '';
+  }
+  return `https://www.sahibinden.com/${subtype.slug}${city ? `/${city}` : ''}`;
+}
+
+/** The saved copy of a listing, updated with what the open page shows now */
+function withSaved(record, saved) {
+  if (!saved) return record;
+  return {
+    ...saved,
+    ...record,
+    fields: { ...saved.fields, ...record.fields },
+    hasDetail: saved.hasDetail || record.hasDetail,
+    location: saved.hasDetail ? saved.location : record.location,
+    image: saved.image || record.image,
+    priceHistory: saved.priceHistory || []
+  };
 }
 
 function computedFields(record, context) {
@@ -1137,6 +1382,22 @@ if (typeof module !== 'undefined') {
     vehicleGroups,
     vehicleSeriesName,
     filterVehicles,
+    vehicleFacts,
+    vehicleSpecs,
+    parseInspection,
+    parseRent,
+    largePhotoUrl,
+    recordPhoto,
+    recordPlace,
+    EMLAK_SUBTYPES,
+    isRealEstate,
+    emlakSubtype,
+    emlakSpecs,
+    emlakFacts,
+    filterEmlak,
+    emlakCounts,
+    emlakCategoryLink,
+    withSaved,
     flatTechnical,
     parseDescription,
     computedFields,

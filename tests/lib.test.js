@@ -189,7 +189,7 @@ test('with all features off the export has none of the optional columns', () => 
   const withOff = lib.recordsToRows([record], [], context)[0];
   const without = lib.recordsToRows([record])[0];
   assert.deepStrictEqual(withOff, without);
-  ['Fiyat (Dolar)', 'Notum', 'Fırsat Puanı', 'Yıllık KM', 'Mağaza', 'Açıklamada Tramer'].forEach((name) => assert.ok(!withOff.includes(name), name));
+  ['Fiyat (Dolar)', 'Notum', 'Fırsat Puanı', 'Mağaza', 'Açıklamada Tramer'].forEach((name) => assert.ok(!withOff.includes(name), name));
 });
 
 test('each switch adds only its own columns', () => {
@@ -285,6 +285,88 @@ test('vehicle filters keep the right cars and put missing values last', () => {
   assert.deepStrictEqual(ids({ series: 'VW Golf', sortBy: 'km' }), ['2', '1']);
   assert.deepStrictEqual(ids({ damage: 'noChanged', sortBy: 'km' }), ['2', '3']);
   assert.deepStrictEqual(ids({ damage: 'clean', sortBy: 'km' }), ['3']);
+});
+
+test('exact facts come from published figures and written text only', () => {
+  const now = Date.parse('2026-11-04');
+  assert.deepStrictEqual(lib.parseInspection('Vize 02/2027 partikül iptal', now).monthsLeft, 3);
+  assert.strictEqual(lib.parseInspection('muayene tarihi 15.03.2027', now).text, '03/2027');
+  assert.strictEqual(lib.parseInspection('muayene 2027-05', now).text, '05/2027');
+  assert.strictEqual(lib.parseInspection('Muayenesi Şubat 2027 e kadar', now).text, '02/2027');
+  assert.strictEqual(lib.parseInspection('Vize yeni yapıldı, 2012 model', now), null);
+  assert.strictEqual(lib.parseInspection('', now), null);
+  const record = { id: '1', category: ['Vasıta'], dateIso: '2026-11-01', description: 'Vize 02/2027 tramer 25.000 TL', price: { amount: 1000000, currency: 'TL' }, priceHistory: [{ amount: 1100000, currency: 'TL' }], fields: { 'Yıl': '2022', KM: '100000', 'Motor Gücü': '100 hp' } };
+  const facts = Object.fromEntries(lib.vehicleFacts(record, now));
+  assert.strictEqual(facts['Yıllık KM'], '25.000');
+  assert.strictEqual(facts['KM Başına Fiyat'], '10 TL');
+  assert.strictEqual(facts['Beygir Başına Fiyat'], '10.000 TL');
+  assert.strictEqual(facts['Muayene (Açıklamada)'], '02/2027, 3 ay kaldı');
+  assert.strictEqual(facts['İlk Görülen Fiyat'], '1.100.000 TL (-%9)');
+  assert.strictEqual(facts['Açıklamada tramer'], '25.000 TL');
+  assert.strictEqual(lib.vehicleFacts({ fields: { 'Motor Gücü': '101 - 125 HP', KM: '5' }, price: { amount: 5, currency: 'TL' } }, now).some(([name]) => name === 'Beygir Başına Fiyat'), false);
+});
+
+test('rent counts only when clearly written as money', () => {
+  assert.strictEqual(lib.parseRent('Kira getirisi 25.000 TL'), 25000);
+  assert.strictEqual(lib.parseRent('kirası 25 bin'), 25000);
+  assert.strictEqual(lib.parseRent('Kiracılı, kira 30000 tl'), 30000);
+  assert.strictEqual(lib.parseRent('Kiralık daire 3 odalı'), null);
+  assert.strictEqual(lib.parseRent('kira 2 yıl önce başladı'), null);
+  const facts = Object.fromEntries(lib.emlakFacts({ category: ['Emlak', 'Konut', 'Satılık'], description: 'Kira getirisi 25.000 TL', price: { amount: 3000000, currency: 'TL' }, fields: { 'm² (Brüt)': '100', 'm² (Net)': '80' } }, Date.parse('2026-11-04')));
+  assert.strictEqual(facts['Kira Geri Dönüşü'], '10 yıl');
+  assert.strictEqual(facts['Net/Brüt (%)'], '80');
+  assert.strictEqual(facts['Fiyat/m²'], '30.000 TL');
+  const rental = Object.fromEntries(lib.emlakFacts({ category: ['Emlak', 'Konut', 'Kiralık'], description: 'Kira 25.000 TL', price: { amount: 25000, currency: 'TL' }, fields: {} }, 0));
+  assert.strictEqual(rental['Kira Geri Dönüşü'], undefined);
+});
+
+test('photo links grow to the large copy where one exists', () => {
+  assert.strictEqual(lib.largePhotoUrl('https://i/a/lthmb_1.jpg'), 'https://i/a/x5_1.jpg');
+  assert.strictEqual(lib.largePhotoUrl('https://i/a/thmb_1.jpg'), 'https://i/a/x5_1.jpg');
+  assert.strictEqual(lib.largePhotoUrl('https://i/a/pr_thmb_1.jpg'), 'https://i/a/pr_thmb_1.jpg');
+  assert.strictEqual(lib.recordPhoto({ photos: ['https://i/x5_9.jpg'], image: 'https://i/thmb_1.jpg' }), 'https://i/x5_9.jpg');
+  assert.strictEqual(lib.recordPhoto({ image: '' }), '');
+});
+
+test('vehicle cards show the site columns, with a dash left to the page for what is missing', () => {
+  const specs = Object.fromEntries(lib.vehicleSpecs({ dateRaw: '04 Kasım 2026', location: 'İzmir / Urla', fields: { Seri: 'Clio', Model: '1.5 dCi', 'Yıl': '2018', KM: '179500', 'İl': 'İzmir', 'İlçe': 'Urla' } }));
+  assert.strictEqual(specs.KM, '179.500');
+  assert.strictEqual(specs['İl / İlçe'], 'İzmir / Urla');
+  assert.strictEqual(specs.Renk, undefined);
+  assert.ok('Renk' in specs);
+  assert.ok(!('Marka' in specs));
+});
+
+test('real estate is split by the site category and uses its own columns', () => {
+  const konut = { id: '1', category: ['Emlak', 'Konut', 'Trabzon'], dateRaw: '03 Kasım 2026', location: 'Ortahisar / Merkez', fields: { 'm² (Brüt)': '95', 'Oda Sayısı': '2+1', 'İlçe': 'Ortahisar', Semt: 'Merkez' }, price: { amount: 10, currency: 'TL' } };
+  const arsa = { id: '2', category: ['Emlak', 'Arsa'], fields: { 'İmar Durumu': 'Konut', 'Ada No': '5', Fiyat: 'x' }, hasDetail: false, price: { amount: 5, currency: 'TL' } };
+  const isyeri = { id: '3', category: ['Emlak', 'İş Yeri', 'Trabzon'], fields: {}, price: { amount: 7, currency: 'TL' } };
+  const devre = { id: '4', category: ['Emlak', 'Devre Mülk'], fields: {} };
+  const araba = { id: '5', category: ['Vasıta', 'Otomobil'], fields: {} };
+  const fromUrl = { id: '6', url: 'https://www.sahibinden.com/ilan/emlak-konut-satilik-1/detay', fields: {} };
+  const records = [konut, arsa, isyeri, devre, araba, fromUrl];
+  assert.deepStrictEqual(records.filter(lib.isRealEstate).map((record) => lib.emlakSubtype(record).id), ['konut', 'arsa', 'isyeri', 'diger', 'konut']);
+  assert.deepStrictEqual(lib.emlakSpecs(konut).map(([name]) => name), ['m² (Brüt)', 'Oda Sayısı', 'İlan Tarihi', 'Konum']);
+  assert.deepStrictEqual(lib.emlakSpecs(arsa).map(([name]) => name), ['İmar Durumu', 'Ada No']);
+  assert.deepStrictEqual(lib.filterEmlak(records, { subtype: 'konut' }).map((record) => record.id), ['1', '6']);
+  assert.deepStrictEqual(lib.filterEmlak(records, { sortBy: 'price' }).map((record) => record.id).slice(0, 3), ['2', '3', '1']);
+  assert.deepStrictEqual(lib.emlakCounts(records).map((item) => [item.id, item.count]), [['konut', 2], ['isyeri', 1], ['arsa', 1], ['diger', 1]]);
+  assert.strictEqual(lib.emlakCategoryLink(lib.EMLAK_SUBTYPES[2], 'https://www.sahibinden.com/emlak-konut/trabzon'), 'https://www.sahibinden.com/arsa/trabzon');
+  assert.strictEqual(lib.emlakCategoryLink(lib.EMLAK_SUBTYPES[1], 'https://www.sahibinden.com/otomobil'), 'https://www.sahibinden.com/is-yeri');
+  assert.strictEqual(lib.emlakCategoryLink(lib.EMLAK_SUBTYPES[0], ''), 'https://www.sahibinden.com/emlak-konut');
+});
+
+test('a saved listing keeps its detail when the results page updates it', () => {
+  const saved = { id: '1', hasDetail: true, location: 'Tam adres', image: 'big', damage: { changed: [] }, priceHistory: [{ amount: 1 }], fields: { Renk: 'Gri', KM: '5' } };
+  const fresh = { id: '1', hasDetail: false, location: 'Kısa', image: 'small', price: { amount: 2 }, fields: { KM: '6' } };
+  const merged = lib.withSaved(fresh, saved);
+  assert.strictEqual(merged.hasDetail, true);
+  assert.strictEqual(merged.location, 'Tam adres');
+  assert.strictEqual(merged.image, 'big');
+  assert.strictEqual(merged.fields.Renk, 'Gri');
+  assert.strictEqual(merged.fields.KM, '6');
+  assert.strictEqual(merged.price.amount, 2);
+  assert.strictEqual(lib.withSaved(fresh, undefined), fresh);
 });
 
 test('only vehicle listings count as vehicles', () => {

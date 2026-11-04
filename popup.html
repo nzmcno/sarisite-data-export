@@ -56,7 +56,7 @@
       justify-content: center;
       gap: 4px;
       height: 36px;
-      padding: 0 7px;
+      padding: 0 6px;
       font: inherit;
       font-size: 12px;
       font-weight: 550;
@@ -221,6 +221,38 @@
 
     .list-row {
       border-top: 1px solid var(--rule);
+    }
+
+    .card-row-main {
+      display: grid;
+      grid-template-columns: 76px minmax(0, 1fr) 28px;
+      gap: 10px;
+      align-items: start;
+      padding: 10px 0;
+    }
+
+    .card-thumb {
+      width: 76px;
+      height: 57px;
+      object-fit: cover;
+      border-radius: 6px;
+      background: var(--raised);
+      display: block;
+    }
+
+    .board-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .link-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 10px;
+      font-size: 12px;
     }
 
     .list-row-main {
@@ -552,6 +584,7 @@
   <nav class="tabs" role="tablist" aria-label="Bölümler">
     <button class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="csv-tab" data-tab="csv">Sayfa</button>
     <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="vehicles-tab" data-tab="vehicles">Araç</button>
+    <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="emlak-tab" data-tab="emlak">Emlak</button>
     <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="images-tab" data-tab="images">Görsel</button>
     <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="basket-tab" data-tab="basket">Sepet<span id="basketCount" class="tab-count" hidden></span></button>
     <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="experimental-tab" data-tab="experimental">Deneysel</button>
@@ -566,7 +599,14 @@
 
   <!-- Vehicles Tab -->
   <section id="vehicles-tab" class="tab-content" role="tabpanel">
+    <p id="boardMessage" class="status-line" role="status"></p>
     <div id="vehicleBoard" class="page-main"></div>
+  </section>
+
+  <!-- Real Estate Tab -->
+  <section id="emlak-tab" class="tab-content" role="tabpanel">
+    <p id="emlakMessage" class="status-line" role="status"></p>
+    <div id="emlakBoard" class="page-main"></div>
   </section>
 
   <!-- Images Tab -->

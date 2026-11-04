@@ -3,7 +3,7 @@
 🚀 **Profesyonel Chrome Uzantısı** - Sahibinden.com ilanlarını CSV ve JSON olarak indirin. Görselleri kaydedin. Türkçe karakter desteği ile tam uyumlu.
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Uzantı-4285F4?style=for-the-badge&logo=google-chrome&logoColor=white)](https://chrome.google.com/webstore)
-[![Version](https://img.shields.io/badge/Sürüm-1.5.0-success?style=for-the-badge)](https://github.com/your-username/sahibinden-data-exporter)
+[![Version](https://img.shields.io/badge/Sürüm-1.6.0-success?style=for-the-badge)](https://github.com/your-username/sahibinden-data-exporter)
 [![License](https://img.shields.io/badge/Lisans-MIT-blue?style=for-the-badge)](LICENSE)
 
 ## 🎯 Kimler İçin Mükemmel
@@ -44,7 +44,7 @@
 
 ### Yan Panel
 
-Eklenti simgesine tıklayınca yan panel açılır ve sekme değiştirsen de açık kalır. Tarayıcılar yan panelin tıklama olmadan açılmasına izin vermez, bu yüzden her pencerede ilk açılış için simgeye bir kez tıklamak gerekir. Küçük pencere ile aynı ekrandır: Sayfa, Araç, Görsel, Sepet, Deneysel ve Ayarlar. İstersen Ayarlar'daki **Simgeye tıklayınca** seçeneğinden küçük pencereye geçebilirsin.
+Eklenti simgesine tıklayınca yan panel açılır ve sekme değiştirsen de açık kalır. Tarayıcılar yan panelin tıklama olmadan açılmasına izin vermez, bu yüzden her pencerede ilk açılış için simgeye bir kez tıklamak gerekir. Küçük pencere ile aynı ekrandır: Sayfa, Araç, Emlak, Görsel, Sepet, Deneysel ve Ayarlar. İstersen Ayarlar'daki **Simgeye tıklayınca** seçeneğinden küçük pencereye geçebilirsin.
 
 ### Araç İlanları
 
@@ -56,6 +56,14 @@ Araç raporu her araç ilanında çalışır, düğmesi yoktur. Yalnızca açık
 - **Teknik veriler:** Motor, yakıt, boyut ve model donanımı. Bunlar modelin genel verileridir, o araca özel olmayabilir.
 - **Araç bölümü:** Sepetteki araçlar seri özetiyle listelenir, hasara ve seriye göre fiyat farkına göre süzülür.
 - **Her yerde:** Araç raporu ve Araç bölümü yan panelde, küçük pencerede ve çalışma alanında aynıdır.
+
+- **Kartlar:** Araçlar Marka, Seri, Model, Yıl, KM, Renk, Fiyat, İlan Tarihi ve İl / İlçe ile listelenir. Site bir sütunu listede göstermiyorsa o alan ilan sayfası okunana kadar boş kalır.
+- **Fotoğraf:** Her ilanın bir fotoğrafı büyük gösterilir, indirilebilir ve linki kopyalanabilir.
+- **Kesin bilgiler:** Araç yaşı, yıllık KM, KM ve beygir başına fiyat, yayında geçen gün, ilk görülen fiyat, açıklamada yazıyorsa muayene tarihi ve tramer. Hepsi yayımlanmış rakamlardan hesaplanır ya da satıcının yazdığıdır, tahmin yoktur.
+
+### Emlak İlanları
+
+Emlak sekmesi açık sayfanın ya da sepetin emlak ilanlarını gösterir ve sitenin kategorilerine göre böler: Konut, İş Yeri, Arsa, Konut Projeleri, Bina, Turistik Tesis. Her tür kendi başlıklarını kullanır, listede olmayan alanlar uydurulmaz. m² fiyatı, net/brüt oranı ve açıklamada açıkça yazıyorsa kira ile geri dönüş süresi hesaplanır. Sitenin proje tanıtım sayfaları farklı bir düzendedir ve okunmaz.
 
 ### Telefon Numaraları
 
@@ -267,7 +275,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔄 Version History
 
-### v1.5.0 (Current)
+### v1.6.0 (Current)
+
+- New Emlak tab and workspace section, split by the site's property kinds
+- Vehicle cards use the site's columns and show a photo with download and link
+- Exact facts: price per km and per horsepower, written inspection date, rent payback
+- Vehicle and Emlak tabs can show the open page or the basket
+
+### v1.5.0
 
 - The icon opens the side panel, with a setting to use the small window instead
 - Side panel and small window are now one screen with the same tabs

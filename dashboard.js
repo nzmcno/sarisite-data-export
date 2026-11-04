@@ -4,6 +4,7 @@ const PAGE_SIZE = 100;
 const VIEWS = [
   { id: 'basket', label: 'Sepet', icon: 'basket' },
   { id: 'vehicles', label: 'Araç', icon: 'car' },
+  { id: 'emlak', label: 'Emlak', icon: 'home' },
   { id: 'analysis', label: 'Analiz', icon: 'chart', needs: ['charts', 'dealScore'] },
   { id: 'searches', label: 'Kayıtlı aramalar', icon: 'bookmark', needs: ['snapshots'] },
   { id: 'data', label: 'Veri ve yedek', icon: 'database' },
@@ -25,7 +26,8 @@ const state = {
   scatterField: '',
   statusText: '',
   vehicleTerms: [],
-  vehicleFilters: { series: '', damage: '', sortBy: 'peer', descending: false }
+  vehicleFilters: { series: '', damage: '', sortBy: 'peer', descending: false },
+  emlakFilters: { subtype: '', sortBy: 'page', descending: false }
 };
 
 async function loadState() {
@@ -628,64 +630,150 @@ function viewAnalysis(view) {
  */
 const vehicleRows = () => filterVehicles(state.records, state.vehicleFilters);
 
+function photoCell(record) {
+  return el('td', {}, record.image ? el('img', { class: 'thumb', src: record.image, alt: '', loading: 'lazy' }) : el('div', { class: 'thumb' }));
+}
+
+function expandCell(isOpen, toggle) {
+  return el('td', { class: 'right' }, el('button', {
+    class: 'expand', type: 'button', icon: 'chevron', 'aria-label': 'Detayı aç veya kapat', 'aria-expanded': String(isOpen), onclick: toggle
+  }));
+}
+
 function renderVehicleRows(table) {
   const vehicles = state.records.filter(isVehicle);
   const rows = vehicleRows();
   const head = table.querySelector('thead');
   const body = table.querySelector('tbody');
-  head.replaceChildren(el('tr', {}, [
-    el('th', { text: 'İlan' }),
-    el('th', { class: 'right', text: 'Yıl' }),
-    el('th', { class: 'right', text: 'KM' }),
-    el('th', { class: 'right', text: 'Yıllık KM' }),
-    el('th', { text: 'Hasar' }),
-    el('th', { class: 'right', text: 'Tramer' }),
-    el('th', { class: 'right', text: 'Fiyat' }),
-    el('th', { class: 'right', text: 'Seriye göre', title: 'Sepetteki aynı marka ve seriye göre, mümkünse ±2 model yılı içinde' }),
-    el('th', { 'aria-label': 'Detay' })
-  ]));
+  const headers = ['Fotoğraf', 'Seri', 'Model', 'İlan Başlığı', 'Yıl', 'KM', 'Renk', 'Fiyat', 'İlan Tarihi', 'İl / İlçe', 'Yıllık KM', 'Hasar', 'Seriye göre', ''];
+  const rightAligned = ['Yıl', 'KM', 'Fiyat', 'Yıllık KM', 'Seriye göre'];
+  head.replaceChildren(el('tr', {}, headers.map((text) => el('th', { class: rightAligned.includes(text) ? 'right' : null, text }))));
   body.textContent = '';
   rows.forEach((record) => {
     const fields = record.fields || {};
     const comparison = vehicleComparison(record, vehicles);
-    const yearly = computedFields(record, { now: Date.now() }).find(([name]) => name === 'Yıllık KM');
-    const tramer = parseDescription(record.description).tramer;
+    const facts = vehicleFacts(record, Date.now());
+    const yearly = facts.find(([name]) => name === 'Yıllık KM');
     const isOpen = state.expanded.has(record.id);
     body.appendChild(el('tr', { class: 'listing-row' }, [
-      el('td', { class: 'cell-title' }, [
-        el('a', { href: record.url, target: '_blank', rel: 'noopener', text: record.title }),
-        el('span', { class: 'cell-sub', text: [fields.Marka, fields.Seri, fields.Model].filter(Boolean).join(' ') || record.location })
-      ]),
+      photoCell(record),
+      el('td', { text: fields.Seri || (record.category || [])[3] || '-' }),
+      el('td', { text: fields.Model || '-' }),
+      el('td', { class: 'cell-title' }, el('a', { href: record.url, target: '_blank', rel: 'noopener', text: record.title })),
       el('td', { class: 'right', text: fields['Yıl'] || '-' }),
       el('td', { class: 'right', text: toNumber(fields.KM) === null ? '-' : formatNumber(toNumber(fields.KM)) }),
-      el('td', { class: 'right', text: yearly ? formatNumber(yearly[1]) : '-' }),
-      el('td', {}, renderDamageChips(record)),
-      el('td', { class: 'right', text: tramer === undefined ? '-' : typeof tramer === 'number' ? `${formatNumber(tramer)} TL` : tramer }),
+      el('td', { text: fields.Renk || '-' }),
       el('td', { class: 'right cell-price', text: formatPrice(record.price) }),
+      el('td', { class: 'nowrap', text: record.dateRaw || '-' }),
+      el('td', { text: recordPlace(record) || '-' }),
+      el('td', { class: 'right', text: yearly ? yearly[1] : '-' }),
+      el('td', {}, renderDamageChips(record)),
       el('td', { class: 'right', text: peerDiffText(comparison) || '-' }),
-      el('td', { class: 'right' }, el('button', {
-        class: 'expand', type: 'button', icon: 'chevron', 'aria-label': 'Detayı aç veya kapat', 'aria-expanded': String(isOpen),
-        onclick: () => {
-          if (isOpen) state.expanded.delete(record.id);
-          else state.expanded.add(record.id);
-          renderVehicleRows(table);
-        }
-      }))
+      expandCell(isOpen, () => {
+        if (isOpen) state.expanded.delete(record.id);
+        else state.expanded.add(record.id);
+        renderVehicleRows(table);
+      })
     ]));
     if (isOpen) {
       const report = renderVehicleReport(record, state.vehicleTerms);
-      const technical = renderTechnical(record);
-      body.appendChild(el('tr', { class: 'detail-row' }, el('td', { colspan: '9' }, el('div', { class: 'detail-grid' }, [
-        el('div', { class: 'detail-fields' }, [report || el('p', { class: 'small muted', text: 'Hasar bilgisi için ilanı açıp sepete ekle.' })]),
-        el('div', { class: 'detail-fields' }, [technical, renderPhones(record)].filter(Boolean))
+      body.appendChild(el('tr', { class: 'detail-row' }, el('td', { colspan: String(headers.length) }, el('div', { class: 'detail-grid' }, [
+        el('div', { class: 'detail-fields' }, [
+          renderPhotoBlock(record, setStatus),
+          facts.length > 0 ? el('section', { class: 'card' }, [el('h2', { class: 'card-title', text: 'Kesin bilgiler' }), renderFacts(facts)]) : null,
+          renderPhones(record)
+        ].filter(Boolean)),
+        el('div', { class: 'detail-fields' }, [
+          report || el('p', { class: 'small muted', text: 'Hasar bilgisi için ilanı açıp sepete ekle.' }),
+          renderTechnical(record)
+        ].filter(Boolean))
       ]))));
     }
   });
   $('vehicleEmpty').hidden = rows.length > 0;
 }
 
+function renderEmlakRows(table) {
+  const rows = filterEmlak(state.records, state.emlakFilters);
+  const names = [];
+  rows.forEach((record) => {
+    emlakSpecs(record).forEach(([name]) => {
+      if (!names.includes(name) && name !== 'İlan Tarihi' && name !== 'Konum' && names.length < 6) names.push(name);
+    });
+  });
+  const headers = ['Fotoğraf', 'İlan Başlığı', ...names, 'Fiyat', 'Fiyat/m²', 'İlan Tarihi', 'Konum', ''];
+  table.querySelector('thead').replaceChildren(el('tr', {}, headers.map((text) => el('th', { class: text === 'Fiyat' || text === 'Fiyat/m²' ? 'right' : null, text }))));
+  const body = table.querySelector('tbody');
+  body.textContent = '';
+  rows.forEach((record) => {
+    const facts = emlakFacts(record, Date.now());
+    const unit = facts.find(([name]) => name === 'Fiyat/m²');
+    const isOpen = state.expanded.has(record.id);
+    const parcel = parcelFromFields(record.fields);
+    const fields = record.fields || {};
+    const place = { il: fields['İl'], ilce: fields['İlçe'], mahalle: fields['Mahalle'] };
+    body.appendChild(el('tr', { class: 'listing-row' }, [
+      photoCell(record),
+      el('td', { class: 'cell-title' }, [
+        el('a', { href: record.url, target: '_blank', rel: 'noopener', text: record.title }),
+        el('span', { class: 'cell-sub', text: emlakSubtype(record).label })
+      ]),
+      ...names.map((name) => el('td', { text: fields[name] || '-' })),
+      el('td', { class: 'right cell-price', text: formatPrice(record.price) }),
+      el('td', { class: 'right', text: unit ? unit[1] : '-' }),
+      el('td', { class: 'nowrap', text: record.dateRaw || '-' }),
+      el('td', { text: recordPlace(record) || '-' }),
+      expandCell(isOpen, () => {
+        if (isOpen) state.expanded.delete(record.id);
+        else state.expanded.add(record.id);
+        renderEmlakRows(table);
+      })
+    ]));
+    if (isOpen) {
+      body.appendChild(el('tr', { class: 'detail-row' }, el('td', { colspan: String(headers.length) }, el('div', { class: 'detail-grid' }, [
+        el('div', { class: 'detail-fields' }, [renderPhotoBlock(record, setStatus)].filter(Boolean)),
+        el('div', { class: 'detail-fields' }, [
+          facts.length > 0 ? el('section', { class: 'card' }, [el('h2', { class: 'card-title', text: 'Kesin bilgiler' }), renderFacts(facts)]) : null,
+          state.features.tkgm && parcel && place.il && place.ilce && place.mahalle ? el('div', {}, el('button', {
+            class: 'btn', type: 'button', icon: 'map', text: 'Parseli TKGM’de aç',
+            onclick: () => openTkgmParcel(place, parcel, setStatus)
+          })) : null,
+          renderPhones(record)
+        ].filter(Boolean))
+      ]))));
+    }
+  });
+}
+
+function viewEmlak(view) {
+  const estate = state.records.filter(isRealEstate);
+  view.appendChild(titleRow('Emlak', estate.length === 0 ? 'Sepette emlak ilanı yok' : `Sepette ${formatNumber(estate.length)} emlak ilanı`,
+    el('button', {
+      class: 'btn btn-primary', type: 'button', icon: 'download', text: 'CSV indir', disabled: estate.length === 0,
+      onclick: () => downloadCsv(recordsToRows(filterEmlak(state.records, state.emlakFilters), state.hiddenColumns, context()), `sahibinden_emlak_${todayIso()}.csv`)
+    })));
+  view.appendChild(el('p', { id: 'statusLine', class: 'status-line', role: 'status', text: state.statusText }));
+  if (estate.length === 0) {
+    view.appendChild(el('section', { class: 'panel' }, el('p', { class: 'empty-text', text: 'Bir emlak listesini ya da ilanını açıp sepete ekle.' })));
+    return;
+  }
+  const table = el('table', { class: 'listings' }, [el('thead'), el('tbody')]);
+  view.appendChild(el('section', {}, [
+    el('div', { class: 'filters', style: 'margin-bottom: 14px' }, [
+      renderEmlakChips(state.records, state.emlakFilters.subtype, (id) => {
+        state.emlakFilters.subtype = id;
+        renderView();
+      }),
+      renderEmlakSort(state.emlakFilters, () => renderEmlakRows(table))
+    ]),
+    el('div', { class: 'table-wrap' }, table)
+  ]));
+  renderEmlakRows(table);
+}
+
 function viewVehicles(view) {
   const vehicles = state.records.filter(isVehicle);
+  view.appendChild(el('p', { id: 'statusLine', class: 'status-line', role: 'status', text: state.statusText }));
   view.appendChild(titleRow('Araç', vehicles.length === 0 ? 'Sepette araç ilanı yok' : `Sepette ${formatNumber(vehicles.length)} araç ilanı`,
     el('button', {
       class: 'btn btn-primary', type: 'button', icon: 'download', text: 'CSV indir', disabled: vehicles.length === 0,
@@ -904,7 +992,7 @@ async function renderView() {
   const view = $('view');
   const scroll = window.scrollY;
   const fresh = el('div', { id: 'view', class: 'view' });
-  const renderers = { basket: viewBasket, analysis: viewAnalysis, vehicles: viewVehicles, searches: viewSearches, data: viewData, settings: viewSettings };
+  const renderers = { basket: viewBasket, analysis: viewAnalysis, vehicles: viewVehicles, emlak: viewEmlak, searches: viewSearches, data: viewData, settings: viewSettings };
   view.replaceWith(fresh);
   await renderers[currentView()](fresh);
   window.scrollTo(0, scroll);

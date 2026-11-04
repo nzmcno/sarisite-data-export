@@ -13,6 +13,8 @@ const ICON_PATHS = {
   open: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
   car: '<path d="M19 17h2a1 1 0 0 0 1-1v-3a2 2 0 0 0-1.6-2l-2.4-.5-2.2-3.5a2 2 0 0 0-1.7-1H9a2 2 0 0 0-1.7 1L5 10.5 3.3 11A2 2 0 0 0 2 13v3a1 1 0 0 0 1 1h2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M9 17h6"/>',
   phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.9.6 2.8.7a2 2 0 0 1 1.7 2z"/>',
+  home: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .7-1.5l7-6a2 2 0 0 1 2.6 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>',
   chart: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M8 17v-5"/><path d="M13 17V7"/><path d="M18 17v-9"/>',
   layers: '<path d="m12 2 9 5-9 5-9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/>',
@@ -462,7 +464,7 @@ function renderVehicleFilters(records, filters, onChange) {
   return el('div', { class: 'filters' }, [
     pick('Seri', 'series', [['', 'Tüm seriler'], ...names.map((name) => [name, name])]),
     pick('Hasar', 'damage', [['', 'Tüm hasarlar'], ['noChanged', 'Değişensiz'], ['clean', 'Boyasız, değişensiz']]),
-    pick('Sırala', 'sortBy', [['peer', 'Seriye göre fiyat'], ['price', 'Fiyat'], ['km', 'KM'], ['year', 'Yıl'], ['damage', 'Hasar']]),
+    pick('Sırala', 'sortBy', [['page', 'Liste sırası'], ['peer', 'Seriye göre fiyat'], ['price', 'Fiyat'], ['km', 'KM'], ['year', 'Yıl'], ['damage', 'Hasar']]),
     pick('Yön', 'descending', [['false', 'Artan'], ['true', 'Azalan']], (value) => value === 'true')
   ]);
 }
@@ -491,6 +493,85 @@ function renderTermsEditor(terms, className) {
     el('div', { class: 'terms-row' }, [input, el('button', { class: 'btn', type: 'button', icon: 'plus', text: 'Ekle', onclick: add })]),
     chips
   ]);
+}
+
+/** Label and value pairs in a compact grid. A missing value shows as a dash. */
+function renderSpecs(specs) {
+  const grid = el('dl', { class: 'spec-grid' });
+  specs.forEach(([label, value]) => {
+    grid.append(el('dt', { text: label }), el('dd', { class: 'num', text: value === undefined || value === null || value === '' ? '-' : String(value) }));
+  });
+  return grid;
+}
+
+/** One photo of the listing, shown large, with its link and a download. Nothing here touches the page. */
+function renderPhotoBlock(record, onStatus) {
+  const smaller = record.image;
+  let url = recordPhoto(record);
+  if (!url) return null;
+  const img = el('img', { class: 'photo-large', src: url, alt: '' });
+  const open = el('a', { class: 'btn', href: url, target: '_blank', rel: 'noopener', icon: 'open', text: 'Aç' });
+  // Showcase thumbnails have no large copy, so the block falls back to the one the page showed
+  img.addEventListener('error', () => {
+    if (!smaller || url === smaller) {
+      img.hidden = true;
+      return;
+    }
+    url = smaller;
+    img.src = url;
+    open.href = url;
+  });
+  return el('div', { class: 'photo-block' }, [
+    img,
+    el('div', { class: 'btn-row' }, [
+      el('button', {
+        class: 'btn', type: 'button', icon: 'download', text: 'İndir',
+        onclick: async () => {
+          const type = (url.match(/\.(jpe?g|png|webp)(?:$|\?)/i) || [null, 'jpg'])[1].toLowerCase();
+          const result = await chrome.runtime.sendMessage({
+            action: 'download-images',
+            data: { images: [{ url, filename: `ilan_${record.id}`, type }], folder: 'sahibinden_fotograflar' }
+          });
+          onStatus(result.status === 'started' ? 'Fotoğraf indiriliyor.' : 'Önceki indirme hâlâ sürüyor.');
+        }
+      }),
+      el('button', {
+        class: 'btn', type: 'button', icon: 'link', text: 'Linki kopyala',
+        onclick: async () => {
+          await navigator.clipboard.writeText(url);
+          onStatus('Fotoğraf linki kopyalandı.');
+        }
+      }),
+      open
+    ])
+  ]);
+}
+
+/** Kind filter for real estate, with how many listings each kind has */
+function renderEmlakChips(records, selected, onPick) {
+  const counts = emlakCounts(records);
+  const total = counts.reduce((sum, item) => sum + item.count, 0);
+  const chip = (id, label, count) => el('button', {
+    class: 'chip', type: 'button', 'aria-pressed': String(selected === id),
+    onclick: () => onPick(id)
+  }, [el('span', { text: label }), el('span', { class: 'chip-count num', text: formatNumber(count) })]);
+  return el('div', { class: 'chip-row', role: 'group', 'aria-label': 'Emlak türü' }, [
+    chip('', 'Tümü', total),
+    ...counts.map((item) => chip(item.id, item.label, item.count))
+  ]);
+}
+
+function renderEmlakSort(filters, onChange) {
+  const select = el('select', { 'aria-label': 'Sırala' }, [
+    ['page', 'Liste sırası'], ['priceUp', 'Fiyat artan'], ['priceDown', 'Fiyat azalan'], ['unitUp', 'Fiyat/m² artan'], ['dateDown', 'En yeni']
+  ].map(([value, text]) => el('option', { value, text })));
+  const choices = { page: ['page', false], priceUp: ['price', false], priceDown: ['price', true], unitUp: ['unit', false], dateDown: ['date', true] };
+  select.value = Object.keys(choices).find((key) => choices[key][0] === filters.sortBy && choices[key][1] === filters.descending) || 'page';
+  select.addEventListener('change', () => {
+    [filters.sortBy, filters.descending] = choices[select.value];
+    onChange();
+  });
+  return select;
 }
 
 /** Numbers the seller wrote in the description. The site's protected phone field is not read. */

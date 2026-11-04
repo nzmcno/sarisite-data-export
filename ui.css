@@ -860,6 +860,74 @@ label.field {
   width: 100%;
 }
 
+.spec-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.spec-grid dt {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.spec-grid dd {
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+.photo-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.photo-large {
+  display: block;
+  width: 100%;
+  max-width: 528px;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: var(--raised);
+  border-radius: var(--radius-control);
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--control);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.chip[aria-pressed="true"] {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.chip-count {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .term-chips {
   display: flex;
   flex-wrap: wrap;

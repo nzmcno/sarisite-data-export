@@ -15,8 +15,12 @@ const app = {
   sort: 'page',
   expanded: new Set(),
   openFolds: new Set(),
-  vehicleFilters: { series: '', damage: '', sortBy: 'peer', descending: false },
-  vehicleExpanded: new Set()
+  vehicleFilters: { series: '', damage: '', sortBy: 'page', descending: false },
+  vehicleExpanded: new Set(),
+  vehicleScope: null,
+  emlakFilters: { subtype: '', sortBy: 'page', descending: false },
+  emlakExpanded: new Set(),
+  emlakScope: null
 };
 
 const QUICK_FACTS = ['Yıl', 'KM', 'Yakıt / Motor Tipi', 'Vites', 'Motor Gücü', 'Renk', 'm² (Brüt)', 'm²', 'Oda Sayısı', 'Bina Yaşı', 'Bulunduğu Kat', 'İmar Durumu'];
@@ -138,6 +142,7 @@ async function refresh(readAgain) {
   if (run !== app.run) return;
   drawPage();
   drawVehicles();
+  drawEmlak();
   renderBasket();
 }
 
@@ -145,6 +150,8 @@ function resetForNewPage(tab) {
   app.url = (tab && tab.url) || '';
   app.expanded.clear();
   app.search = '';
+  app.vehicleScope = null;
+  app.emlakScope = null;
   setPageMessage('');
   $('imageResults').hidden = true;
   $('emptyState').hidden = false;
@@ -196,6 +203,7 @@ function ratesBlock(price) {
     app.ratesResult = await loadRates(features, true).catch(() => app.ratesResult);
     drawPage();
     drawVehicles();
+    drawEmlak();
   });
   return holder;
 }
@@ -481,20 +489,87 @@ function drawActions() {
  * VEHICLES TAB
  * ============================================================================
  */
+/** The open page's listings, with anything already saved about them */
+function pageListings() {
+  const { page } = app;
+  if (!page) return [];
+  const saved = (record) => withSaved(record, app.basket[record.id]);
+  if (page.pageType === 'detail') return [saved(detailToRecord(page.listing))];
+  if (page.pageType === 'list') return page.rows.map((row) => saved(listRowToRecord(row, page)));
+  return [];
+}
+
+/** Which listings a board shows. It starts on the open page when that page has any of its kind. */
+function boardScope(chosen, belongs) {
+  const onPage = pageListings().filter(belongs);
+  const inBasket = Object.values(app.basket).filter(belongs);
+  const scope = chosen || (onPage.length > 0 ? 'page' : 'basket');
+  return { scope, onPage, inBasket, records: scope === 'page' ? onPage : inBasket };
+}
+
+function scopePicker(scope, onPage, inBasket, onPick) {
+  const picker = el('div', { class: 'segmented', role: 'group', 'aria-label': 'Hangi ilanlar' });
+  [['page', `Bu sayfa (${formatNumber(onPage.length)})`], ['basket', `Sepet (${formatNumber(inBasket.length)})`]].forEach(([value, label]) => {
+    picker.appendChild(el('button', { type: 'button', text: label, 'aria-pressed': String(scope === value), onclick: () => onPick(value) }));
+  });
+  return picker;
+}
+
+/** A row of the open results page, so one listing can go to the basket from a board */
+function addListingButton(record) {
+  if (app.basket[record.id] || !app.page) return null;
+  const { page } = app;
+  const row = page.pageType === 'list' ? page.rows.find((item) => item.id === record.id) : null;
+  if (page.pageType === 'list' && !row) return null;
+  return el('button', {
+    class: 'btn', type: 'button', icon: 'plus', text: 'Sepete ekle',
+    onclick: () => chrome.runtime.sendMessage({ action: 'basket-add-page', data: { page: row ? { ...page, rows: [row] } : page } })
+  });
+}
+
+function listingCard({ record, specs, summary, chips, isOpen, onToggle, details }) {
+  const holder = el('div', { class: 'list-row' }, el('div', { class: 'card-row-main' }, [
+    record.image ? el('img', { class: 'card-thumb', src: record.image, alt: '', loading: 'lazy' }) : el('div', { class: 'card-thumb' }),
+    el('div', { style: 'min-width: 0' }, [
+      el('a', { class: 'list-title', href: record.url, target: '_blank', rel: 'noopener', text: record.title, title: record.title }),
+      el('div', { class: 'list-price', text: formatPrice(record.price) }),
+      renderSpecs(specs),
+      summary.length > 0 ? el('div', { class: 'list-meta', style: 'margin-top: 4px' }, summary.map((text) => el('span', { text }))) : null,
+      chips ? el('div', { style: 'margin-top: 4px' }, chips) : null
+    ]),
+    expandButton(isOpen, onToggle)
+  ]));
+  if (isOpen) holder.appendChild(el('div', { class: 'list-row-detail' }, details().filter(Boolean)));
+  return holder;
+}
+
+function factsCard(title, facts) {
+  return facts.length > 0 ? el('section', { class: 'card' }, [el('h2', { class: 'card-title', text: title }), renderFacts(facts)]) : null;
+}
+
+/**
+ * ============================================================================
+ * VEHICLES TAB
+ * ============================================================================
+ */
 function drawVehicles() {
   const board = $('vehicleBoard');
-  const records = Object.values(app.basket);
-  const vehicles = records.filter(isVehicle);
+  const { scope, onPage, inBasket, records } = boardScope(app.vehicleScope, isVehicle);
   const parts = [];
+  const picker = scopePicker(scope, onPage, inBasket, (value) => {
+    app.vehicleScope = value;
+    drawVehicles();
+  });
 
-  if (vehicles.length === 0) {
-    parts.push(...stateBlock('Sepette araç ilanı yok', 'Bir araç ilanını ya da listesini Sayfa bölümünden sepete ekle. Hasar şeması için ilan sayfasından eklemek gerekir.'));
+  if (records.length === 0) {
+    parts.push(picker, ...stateBlock(scope === 'page' ? 'Bu sayfada araç ilanı yok' : 'Sepette araç ilanı yok', 'Bir araç listesi ya da ilanı açınca burada görünür. Hasar şeması için ilan sayfası gerekir.'));
     parts.push(renderTermsEditor(app.terms, 'card'));
     board.replaceChildren(...parts);
     return;
   }
 
-  const groups = vehicleGroups(vehicles);
+  const peers = [...new Map([...inBasket, ...onPage].map((record) => [record.id, record])).values()];
+  const groups = vehicleGroups(records);
   if (groups.length > 0) {
     parts.push(el('section', { class: 'card' }, [
       el('h2', { class: 'card-title', text: 'Seri özeti' }),
@@ -514,24 +589,24 @@ function drawVehicles() {
   const rowsHost = el('div', { class: 'row-list' });
   const drawRows = () => {
     const rows = filterVehicles(records, app.vehicleFilters);
-    rowsHost.replaceChildren(...rows.map((record) => vehicleRow(record, vehicles, drawRows)));
-    if (rows.length === 0) rowsHost.appendChild(el('p', { class: 'small muted', style: 'padding: 12px 0', text: 'Bu filtrelere uyan araç yok. Hasar filtreleri yalnızca ilan sayfasından eklenen ilanlarda çalışır.' }));
+    rowsHost.replaceChildren(...rows.map((record) => vehicleCard(record, peers, drawRows)));
+    if (rows.length === 0) rowsHost.appendChild(el('p', { class: 'small muted', style: 'padding: 12px 0', text: 'Bu filtrelere uyan araç yok. Hasar filtreleri yalnızca ilan sayfası okunmuş ilanlarda çalışır.' }));
   };
   drawRows();
 
+  parts.unshift(el('div', { class: 'board-head' }, [
+    picker,
+    el('button', {
+      class: 'btn', type: 'button', icon: 'download', text: 'CSV',
+      onclick: async () => {
+        const { hiddenColumns = [] } = await chrome.storage.local.get('hiddenColumns');
+        const context = await exportContext(app.features, app.ratesResult.rates);
+        downloadCsv(recordsToRows(filterVehicles(records, app.vehicleFilters), hiddenColumns, context), `sahibinden_arac_${todayIso()}.csv`);
+      }
+    })
+  ]));
   parts.push(
     el('section', { class: 'card' }, [
-      el('div', { class: 'group-header' }, [
-        el('h2', { text: `${formatNumber(vehicles.length)} araç ilanı` }),
-        el('button', {
-          class: 'btn', type: 'button', icon: 'download', text: 'CSV',
-          onclick: async () => {
-            const { hiddenColumns = [] } = await chrome.storage.local.get('hiddenColumns');
-            const context = await exportContext(app.features, app.ratesResult.rates);
-            downloadCsv(recordsToRows(filterVehicles(records, app.vehicleFilters), hiddenColumns, context), `sahibinden_arac_${todayIso()}.csv`);
-          }
-        })
-      ]),
       el('div', { style: 'margin-bottom: 8px' }, renderVehicleFilters(records, app.vehicleFilters, drawRows)),
       rowsHost
     ]),
@@ -542,43 +617,128 @@ function drawVehicles() {
   $('vehicles-tab').scrollTop = scroll;
 }
 
-function vehicleRow(record, vehicles, redraw) {
-  const fields = record.fields || {};
+function vehicleCard(record, peers, redraw) {
+  const now = Date.now();
+  const comparison = vehicleComparison(record, peers);
+  const facts = vehicleFacts(record, now);
+  const yearly = facts.find(([name]) => name === 'Yıllık KM');
+  const perKm = facts.find(([name]) => name === 'KM Başına Fiyat');
   const isOpen = app.vehicleExpanded.has(record.id);
-  const comparison = vehicleComparison(record, vehicles);
-  const yearly = computedFields(record, { now: Date.now() }).find(([name]) => name === 'Yıllık KM');
-  const tramer = parseDescription(record.description).tramer;
-  const meta = [
-    fields['Yıl'],
-    toNumber(fields.KM) !== null ? `${formatNumber(toNumber(fields.KM))} km` : null,
-    yearly ? `yılda ${formatNumber(yearly[1])} km` : null,
-    tramer === undefined ? null : `Tramer ${typeof tramer === 'number' ? `${formatNumber(tramer)} TL` : tramer}`,
-    comparison && comparison.priceDiff !== null ? `Seriye göre ${peerDiffText(comparison)}` : null
-  ].filter(Boolean);
-  const holder = el('div', { class: 'list-row' }, el('div', { class: 'list-row-main' }, [
-    record.image ? el('img', { class: 'list-thumb', src: record.image, alt: '', loading: 'lazy' }) : el('div', { class: 'list-thumb' }),
-    el('div', { style: 'min-width: 0' }, [
-      el('a', { class: 'list-title', href: record.url, target: '_blank', rel: 'noopener', text: record.title, title: record.title }),
-      el('div', { class: 'list-price', text: formatPrice(record.price) }),
-      el('div', { class: 'list-meta' }, meta.map((text) => el('span', { text }))),
-      el('div', { style: 'margin-top: 3px' }, renderDamageChips(record))
-    ]),
-    expandButton(isOpen, () => {
+  return listingCard({
+    record,
+    isOpen,
+    specs: vehicleSpecs(record),
+    summary: [
+      yearly ? `Yılda ${yearly[1]} km` : null,
+      perKm ? `KM başına ${perKm[1]}` : null,
+      comparison && comparison.priceDiff !== null ? `Seriye göre ${peerDiffText(comparison)}` : null
+    ].filter(Boolean),
+    chips: renderDamageChips(record),
+    onToggle: () => {
       if (isOpen) app.vehicleExpanded.delete(record.id);
       else app.vehicleExpanded.add(record.id);
       redraw();
-    })
-  ]));
-  if (isOpen) {
-    const parts = [
+    },
+    details: () => [
+      renderPhotoBlock(record, (text) => { $('boardMessage').textContent = text; }),
+      addListingButton(record),
+      factsCard('Kesin bilgiler', facts),
       comparison ? renderPeerComparison(comparison) : null,
       renderVehicleReport(record, app.terms),
       renderPhones(record),
       renderTechnical(record, app.openFolds)
-    ].filter(Boolean);
-    holder.appendChild(el('div', { class: 'list-row-detail' }, parts.length > 0 ? parts : el('p', { class: 'small muted', text: 'Hasar ve teknik bilgi için ilanı açıp sepete ekle.' })));
+    ]
+  });
+}
+
+/**
+ * ============================================================================
+ * REAL ESTATE TAB
+ * ============================================================================
+ */
+function drawEmlak() {
+  const board = $('emlakBoard');
+  const { scope, onPage, inBasket, records } = boardScope(app.emlakScope, isRealEstate);
+  const picker = scopePicker(scope, onPage, inBasket, (value) => {
+    app.emlakScope = value;
+    app.emlakFilters.subtype = '';
+    drawEmlak();
+  });
+  const browse = el('section', { class: 'card' }, [
+    el('h2', { class: 'card-title', text: 'Sahibinden’de kategoriye git' }),
+    el('div', { class: 'link-chips' }, EMLAK_SUBTYPES.map((subtype) => el('a', {
+      href: emlakCategoryLink(subtype, app.url), target: '_blank', rel: 'noopener', text: subtype.label
+    })))
+  ]);
+  if (records.length === 0) {
+    board.replaceChildren(picker, ...stateBlock(scope === 'page' ? 'Bu sayfada emlak ilanı yok' : 'Sepette emlak ilanı yok', 'Bir emlak listesi ya da ilanı açınca burada görünür.'), browse);
+    return;
   }
-  return holder;
+  if (app.emlakFilters.subtype && !emlakCounts(records).some((item) => item.id === app.emlakFilters.subtype)) app.emlakFilters.subtype = '';
+
+  const rowsHost = el('div', { class: 'row-list' });
+  const drawRows = () => {
+    const rows = filterEmlak(records, app.emlakFilters);
+    rowsHost.replaceChildren(...rows.map((record) => emlakCard(record, drawRows)));
+  };
+  drawRows();
+  const chips = () => renderEmlakChips(records, app.emlakFilters.subtype, (id) => {
+    app.emlakFilters.subtype = id;
+    drawEmlak();
+  });
+  const scroll = $('emlak-tab').scrollTop;
+  board.replaceChildren(
+    el('div', { class: 'board-head' }, [
+      picker,
+      el('button', {
+        class: 'btn', type: 'button', icon: 'download', text: 'CSV',
+        onclick: async () => {
+          const { hiddenColumns = [] } = await chrome.storage.local.get('hiddenColumns');
+          const context = await exportContext(app.features, app.ratesResult.rates);
+          downloadCsv(recordsToRows(filterEmlak(records, app.emlakFilters), hiddenColumns, context), `sahibinden_emlak_${todayIso()}.csv`);
+        }
+      })
+    ]),
+    chips(),
+    el('section', { class: 'card' }, [
+      el('div', { style: 'margin-bottom: 8px' }, renderEmlakSort(app.emlakFilters, drawRows)),
+      rowsHost
+    ]),
+    browse
+  );
+  $('emlak-tab').scrollTop = scroll;
+}
+
+function emlakCard(record, redraw) {
+  const facts = emlakFacts(record, Date.now());
+  const unit = facts.find(([name]) => name === 'Fiyat/m²');
+  const isOpen = app.emlakExpanded.has(record.id);
+  const subtype = emlakSubtype(record);
+  const parcel = parcelFromFields(record.fields);
+  const place = { il: (record.fields || {})['İl'], ilce: (record.fields || {})['İlçe'], mahalle: (record.fields || {})['Mahalle'] };
+  const status = (text) => { $('emlakMessage').textContent = text; };
+  return listingCard({
+    record,
+    isOpen,
+    specs: emlakSpecs(record),
+    summary: [subtype.label, unit ? `m² ${unit[1]}` : null].filter(Boolean),
+    onToggle: () => {
+      if (isOpen) app.emlakExpanded.delete(record.id);
+      else app.emlakExpanded.add(record.id);
+      redraw();
+    },
+    details: () => [
+      renderPhotoBlock(record, status),
+      addListingButton(record),
+      factsCard('Kesin bilgiler', facts),
+      app.features.tkgm && parcel && place.il && place.ilce && place.mahalle ? el('button', {
+        class: 'btn', type: 'button', icon: 'map', text: 'Parseli TKGM’de aç',
+        onclick: () => openTkgmParcel(place, parcel, status)
+      }) : null,
+      renderPhones(record),
+      !record.hasDetail ? el('p', { class: 'small muted', text: 'Daha fazla bilgi için ilanı açıp sepete ekle.' }) : null
+    ]
+  });
 }
 
 /**
