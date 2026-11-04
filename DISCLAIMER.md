@@ -6,7 +6,7 @@
 
 ### Independent Tool
 
-The Sahibinden CSV/Excel Exporter Chrome extension ("the Extension") is an **independent, third-party tool** and is **not affiliated with, endorsed by, sponsored by, or officially connected** to Sahibinden.com, its parent company, subsidiaries, or related entities.
+The İlan Veri İndirici Chrome extension ("the Extension") is an **independent, third-party tool** and is **not affiliated with, endorsed by, sponsored by, or officially connected** to Sahibinden.com, its parent company, subsidiaries, or related entities.
 
 ### Purpose and Scope
 

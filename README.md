@@ -1,9 +1,9 @@
-# Sahibinden İlan Veri İndirici - CSV Excel ve Görsel İndirme
+# İlan Veri İndirici: Sahibinden İlanlarını CSV'ye Aktar
 
 🚀 **Profesyonel Chrome Uzantısı** - Sahibinden.com ilanlarını CSV ve JSON olarak indirin. Görselleri kaydedin. Türkçe karakter desteği ile tam uyumlu.
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Uzantı-4285F4?style=for-the-badge&logo=google-chrome&logoColor=white)](https://chrome.google.com/webstore)
-[![Version](https://img.shields.io/badge/Sürüm-1.7.0-success?style=for-the-badge)](https://github.com/your-username/sahibinden-data-exporter)
+[![Version](https://img.shields.io/badge/Sürüm-1.8.1-success?style=for-the-badge)](https://github.com/your-username/sahibinden-data-exporter)
 [![License](https://img.shields.io/badge/Lisans-MIT-blue?style=for-the-badge)](LICENSE)
 
 ## 🎯 Kimler İçin Mükemmel
@@ -281,7 +281,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔄 Version History
 
-### v1.8.0 (Current)
+### v1.8.1 (Current)
+
+- New name: İlan Veri İndirici: Sahibinden İlanlarını CSV'ye Aktar
+- New icon, the orange tag used inside the extension
+
+### v1.8.0
 
 - The comparison with other listings of the same series is gone from the Sayfa, Araç and Sepet tabs and the workspace, with its sort option and column
 - List rows no longer say how far a price is from the median

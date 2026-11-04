@@ -30,7 +30,7 @@ const isSahibindenUrl = (url) => /^https?:\/\/([a-z0-9-]+\.)?sahibinden\.com\//i
  * ============================================================================
  */
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('Sahibinden İlan Veri İndirici extension installed successfully!');
+  console.log('İlan Veri İndirici extension installed successfully!');
   applyFeatureEffects();
   applyActionSurface();
 });

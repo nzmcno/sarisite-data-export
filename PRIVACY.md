@@ -4,7 +4,7 @@
 
 ## Overview
 
-Sahibinden CSV/Excel Exporter ("the Extension") is committed to protecting your privacy. This Privacy Policy explains how we handle information when you use our Chrome extension.
+İlan Veri İndirici ("the Extension") is committed to protecting your privacy. This Privacy Policy explains how we handle information when you use our Chrome extension.
 
 ## Information We Do NOT Collect
 
