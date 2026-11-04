@@ -29,7 +29,7 @@ const FEATURES = [
   { id: 'autoSaveListings', where: 'Sepet, ilan açtıkça', group: 'browsing', risk: 'medium', title: 'Açtığım ilanları kaydet', desc: 'Açtığın her ilan sayfasını sepete ekler. Ek istek atmaz ama her ilan sayfasında kod çalıştırır.' },
   { id: 'autoAddPages', where: 'Sepet, liste açtıkça', group: 'browsing', risk: 'medium', title: 'Gezdiğim listeleri kaydet', desc: 'Açtığın her liste sayfasını sepete ekler. Ek istek atmaz ama her liste sayfasında kod çalıştırır.' },
 
-  { id: 'readWithoutOpening', where: 'Deneysel', group: 'requests', risk: 'high', session: true, title: 'İlanı açmadan oku', desc: 'Açık listedeki ilanları sekme açmadan okur.' },
+  { id: 'readWithoutOpening', where: 'Deneysel ve Araç bölümü', group: 'requests', risk: 'high', session: true, title: 'İlanı açmadan oku', desc: 'Açık listedeki ilanları sekme açmadan okur. Araç bölümünde ilanlar tek tek okunur.' },
   { id: 'autoPagination', where: 'Deneysel', group: 'requests', risk: 'high', session: true, title: 'Sonraki sayfaları oku', desc: 'Açık aramanın sonraki sayfalarını okuyup sepete ekler.' },
   { id: 'bulkPriceHistory', where: 'Deneysel', group: 'requests', risk: 'high', session: true, title: 'Toplu fiyat geçmişi', desc: 'Sitenin kendi iç servisinden fiyat geçmişi ister. Testte bu çağrıdan hemen sonra doğrulama sayfası çıktı, en riskli özellik budur.' },
   { id: 'savedSearchCheck', where: 'Arka planda, bildirimle', group: 'requests', risk: 'high', title: 'Kayıtlı aramaları arka planda kontrol et', desc: '6 saatte bir, sahibinden sekmesi açıksa en fazla 3 kayıtlı aramayı okur ve yeni ilan veya fiyat düşüşünü bildirir. Kayıtlı aramaları da açar.', requires: ['snapshots'] }

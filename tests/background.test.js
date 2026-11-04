@@ -130,6 +130,36 @@ test('the reader caps a run and saves what it reads', async () => {
   assert.strictEqual(worker.log.scripts.length, 10);
   assert.strictEqual(Object.keys(worker.local.basket).length, 10);
   assert.strictEqual(worker.local.guardedState.dayCount, 10);
+  assert.deepStrictEqual(worker.local.guardedState.pendingIds, []);
+});
+
+test('the workspace reads through an open site tab and asks for one when there is none', async () => {
+  const none = loadWorker(session({ readWithoutOpening: true }));
+  const refused = await none.send('enrich-start', { listings: listings(1) });
+  assert.strictEqual(refused.status, 'error');
+  assert.match(refused.error, /sahibinden sekmesi/);
+  assert.deepStrictEqual(none.log.scripts, []);
+  const open = loadWorker({ ...session({ readWithoutOpening: true }), openTabs: [{ id: 5, status: 'complete' }] });
+  open.responses.queue = [goodListing('1')];
+  assert.strictEqual((await open.send('enrich-start', { listings: listings(1) })).status, 'started');
+  await open.settle();
+  assert.strictEqual(open.log.scripts.length, 1);
+});
+
+test('a reader run lets its queue be followed and stopped', async () => {
+  const worker = loadWorker(session({ readWithoutOpening: true }));
+  worker.responses.queue = Array.from({ length: 3 }, (_, index) => goodListing(String(index + 1)));
+  await worker.send('enrich-start', { tabId: 1, listings: listings(3) });
+  const running = await worker.send('guarded-status', {});
+  assert.strictEqual(running.running, true);
+  assert.strictEqual(running.pendingIds.length, 3);
+  await worker.send('guarded-stop', {});
+  await worker.settle();
+  const stopped = await worker.send('guarded-status', {});
+  assert.strictEqual(stopped.running, false);
+  assert.deepStrictEqual(stopped.pendingIds, []);
+  assert.ok(worker.log.scripts.length < 3);
+  assert.match(stopped.lastMessage, /Durduruldu/);
 });
 
 for (const [name, failure] of [

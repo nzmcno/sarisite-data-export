@@ -27,6 +27,8 @@ const state = {
   statusText: '',
   vehicleTerms: [],
   vehicleFilters: { series: '', damage: '', sortBy: 'page', descending: false },
+  seriesOpen: new Set(),
+  guarded: null,
   emlakFilters: { subtype: '', sortBy: 'page', descending: false }
 };
 
@@ -40,6 +42,7 @@ async function loadState() {
   state.scoreWeights = { ...DEFAULT_SCORE_WEIGHTS, ...(stored.scoreWeights || {}) };
   state.ratesResult = await loadRates(state.features, false).catch(() => ({ status: 'error', rates: null }));
   state.rates = state.ratesResult.rates;
+  state.guarded = await chrome.runtime.sendMessage({ action: 'guarded-status' }).catch(() => null);
 }
 
 const context = () => ({
@@ -665,6 +668,41 @@ function photoCell(record) {
   return el('td', {}, record.image ? el('img', { class: 'thumb', src: record.image, alt: '', loading: 'lazy' }) : el('div', { class: 'thumb' }));
 }
 
+/** Which way a header click takes the sort: up, then down, then back to the list's own order */
+function nextVehicleSort(key) {
+  const filters = state.vehicleFilters;
+  if (filters.sortBy !== key) return { sortBy: key, descending: false };
+  return filters.descending ? { sortBy: 'page', descending: false } : { sortBy: key, descending: true };
+}
+
+function sortableHeader(table, { label, sort, right, wrap }) {
+  const { sortBy, descending } = state.vehicleFilters;
+  const active = !!sort && sortBy === sort;
+  const classes = [right ? 'right' : '', wrap ? 'th-wrap' : ''].filter(Boolean).join(' ');
+  return el('th', { class: classes || null, 'aria-sort': active ? (descending ? 'descending' : 'ascending') : null }, sort ? el('button', {
+    class: 'th-sort', type: 'button', title: `${label} sütununa göre sırala`,
+    onclick: () => {
+      Object.assign(state.vehicleFilters, nextVehicleSort(sort));
+      renderVehicleRows(table);
+    }
+  }, [el('span', { text: label }), active ? el('span', { 'aria-hidden': 'true', text: descending ? '↓' : '↑' }) : null]) : el('span', { text: label }));
+}
+
+const VEHICLE_COLUMNS = [
+  { label: 'Fotoğraf' },
+  { label: 'Seri', sort: 'series' },
+  { label: 'Model', sort: 'model' },
+  { label: 'İlan Başlığı', sort: 'title' },
+  { label: 'Yıl', sort: 'year', right: true },
+  { label: 'KM', sort: 'km', right: true },
+  { label: 'Renk', sort: 'color' },
+  { label: 'Fiyat', sort: 'price', right: true },
+  { label: 'İlan Tarihi', sort: 'date' },
+  { label: 'İl / İlçe', sort: 'place' },
+  { label: 'Ortalama Yıllık KM', sort: 'yearly', right: true, wrap: true },
+  { label: 'Hasar', sort: 'damage' }
+];
+
 function expandCell(isOpen, toggle) {
   return el('td', { class: 'right' }, el('button', {
     class: 'expand', type: 'button', icon: 'chevron', 'aria-label': 'Detayı aç veya kapat', 'aria-expanded': String(isOpen), onclick: toggle
@@ -675,16 +713,21 @@ function renderVehicleRows(table) {
   const rows = vehicleRows();
   const head = table.querySelector('thead');
   const body = table.querySelector('tbody');
-  const headers = ['Fotoğraf', 'Seri', 'Model', 'İlan Başlığı', 'Yıl', 'KM', 'Renk', 'Fiyat', 'İlan Tarihi', 'İl / İlçe', 'Ortalama Yıllık KM', 'Hasar', ''];
-  const rightAligned = ['Yıl', 'KM', 'Fiyat', 'Ortalama Yıllık KM'];
-  head.replaceChildren(el('tr', {}, headers.map((text) => el('th', { class: text === 'Ortalama Yıllık KM' ? 'right th-wrap' : rightAligned.includes(text) ? 'right' : null, text }))));
+  head.replaceChildren(el('tr', {}, VEHICLE_COLUMNS.map((column) => sortableHeader(table, column))));
   body.textContent = '';
   rows.forEach((record) => {
     const fields = record.fields || {};
     const facts = vehicleFacts(record, Date.now());
     const yearly = facts.find(([name]) => name === 'Ortalama Yıllık KM');
     const isOpen = state.expanded.has(record.id);
-    body.appendChild(el('tr', { class: 'listing-row' }, [
+    const toggle = () => {
+      if (isOpen) state.expanded.delete(record.id);
+      else state.expanded.add(record.id);
+      renderVehicleRows(table);
+      const row = body.querySelector(`[data-row="${CSS.escape(record.id)}"]`);
+      if (row) row.focus({ preventScroll: true });
+    };
+    body.appendChild(toggleOnClick(el('tr', { class: 'listing-row', 'data-row': record.id }, [
       photoCell(record),
       el('td', { text: fields.Seri || (record.category || [])[3] || '-' }),
       el('td', { text: fields.Model || '-' }),
@@ -696,16 +739,11 @@ function renderVehicleRows(table) {
       el('td', { class: 'nowrap', text: record.dateRaw || '-' }),
       el('td', { text: recordPlace(record) || '-' }),
       el('td', { class: 'right', text: yearly ? yearly[1] : '-' }),
-      el('td', {}, renderDamageChips(record)),
-      expandCell(isOpen, () => {
-        if (isOpen) state.expanded.delete(record.id);
-        else state.expanded.add(record.id);
-        renderVehicleRows(table);
-      })
-    ]));
+      el('td', {}, isReading(record, state.guarded) ? readingMark('Okunuyor') : renderDamageChips(record))
+    ]), isOpen, toggle));
     if (isOpen) {
       const report = renderVehicleReport(record, state.vehicleTerms);
-      body.appendChild(el('tr', { class: 'detail-row' }, el('td', { colspan: String(headers.length) }, el('div', { class: 'detail-grid' }, [
+      body.appendChild(el('tr', { class: 'detail-row' }, el('td', { colspan: String(VEHICLE_COLUMNS.length) }, el('div', { class: 'detail-grid' }, [
         el('div', { class: 'detail-fields' }, [
           renderPhotoBlock(record, setStatus),
           facts.length > 0 ? el('section', { class: 'card' }, [el('h2', { class: 'card-title', text: 'Kesin bilgiler' }), renderFacts(facts)]) : null,
@@ -713,13 +751,15 @@ function renderVehicleRows(table) {
           renderDescription(record, state.expanded)
         ].filter(Boolean)),
         el('div', { class: 'detail-fields' }, [
-          report || el('p', { class: 'small muted', text: 'Hasar bilgisi için ilanı açıp sepete ekle.' }),
+          report || (record.hasDetail ? el('p', { class: 'small muted', text: 'Bu ilanda hasar bilgisi yok.' }) : renderReadOne(record, state.features, state.guarded, undefined, setStatus)),
           renderTechnical(record)
         ].filter(Boolean))
       ]))));
     }
   });
   $('vehicleEmpty').hidden = rows.length > 0;
+  const stripHost = $('vehicleRead');
+  if (stripHost) stripHost.replaceChildren(...[renderReadStrip(rows, state.features, state.guarded)].filter(Boolean));
 }
 
 function renderEmlakRows(table) {
@@ -816,28 +856,52 @@ function viewVehicles(view) {
 
   const groups = vehicleGroups(vehicles);
   if (groups.length > 0) {
+    const money = (amount, currency) => (amount ? `${formatNumber(amount)} ${currency}` : '-');
+    const figures = (group) => [
+      el('td', { class: 'right', text: formatNumber(group.count) }),
+      el('td', { class: 'right', text: money(group.minPrice, group.currency) }),
+      el('td', { class: 'right cell-price', text: money(group.medianPrice, group.currency) }),
+      el('td', { class: 'right', text: group.medianKm ? formatNumber(group.medianKm) : '-' }),
+      el('td', { class: 'right', text: money(group.maxPrice, group.currency) })
+    ];
+    const summaryBody = el('tbody');
+    const drawSummary = () => {
+      summaryBody.replaceChildren(...groups.slice(0, 12).flatMap((group) => {
+        const isOpen = state.seriesOpen.has(group.key);
+        const row = toggleOnClick(el('tr', { 'data-series': group.key }, [
+          el('td', {}, el('span', { class: 'series-toggle' }, [el('span', { text: group.key }), el('span', { icon: 'chevron', 'aria-hidden': 'true', style: 'display: inline-flex' })])),
+          ...figures(group)
+        ]), isOpen, () => {
+          if (isOpen) state.seriesOpen.delete(group.key);
+          else state.seriesOpen.add(group.key);
+          drawSummary();
+          const again = summaryBody.querySelector(`[data-series="${CSS.escape(group.key)}"]`);
+          if (again) again.focus({ preventScroll: true });
+        });
+        return isOpen
+          ? [row, ...group.years.map((year) => el('tr', { class: 'series-year' }, [el('td', { text: year.year === null ? 'Yıl belirtilmemiş' : `${year.year} model` }), ...figures(year)]))]
+          : [row];
+      }));
+    };
+    drawSummary();
     const summary = el('table', { class: 'listings' }, [
       el('thead', {}, el('tr', {}, [
         el('th', { text: 'Marka ve seri' }),
         el('th', { class: 'right', text: 'İlan' }),
         el('th', { class: 'right', text: 'En düşük' }),
         el('th', { class: 'right', text: 'Medyan fiyat' }),
-        el('th', { class: 'right', text: 'Medyan KM' })
+        el('th', { class: 'right', text: 'Medyan KM' }),
+        el('th', { class: 'right', text: 'En yüksek fiyat' })
       ])),
-      el('tbody', {}, groups.slice(0, 12).map((group) => el('tr', {}, [
-        el('td', { text: group.key }),
-        el('td', { class: 'right', text: formatNumber(group.count) }),
-        el('td', { class: 'right', text: group.minPrice ? `${formatNumber(group.minPrice)} ${group.currency}` : '-' }),
-        el('td', { class: 'right cell-price', text: group.medianPrice ? `${formatNumber(group.medianPrice)} ${group.currency}` : '-' }),
-        el('td', { class: 'right', text: group.medianKm ? formatNumber(group.medianKm) : '-' })
-      ])))
+      summaryBody
     ]);
     view.appendChild(el('section', { class: 'panel' }, [el('h2', { text: 'Seri özeti' }), el('div', { class: 'table-wrap' }, summary)]));
   }
 
-  const table = el('table', { class: 'listings' }, [el('thead'), el('tbody')]);
+  const table = el('table', { class: 'listings vehicle-table' }, [el('thead'), el('tbody')]);
   view.appendChild(el('section', {}, [
-    el('div', { style: 'margin-bottom: 14px' }, renderVehicleFilters(vehicles, state.vehicleFilters, () => renderVehicleRows(table))),
+    el('div', { id: 'vehicleRead' }),
+    el('div', { style: 'margin-bottom: 14px' }, renderVehicleFilters(vehicles, state.vehicleFilters, () => renderVehicleRows(table), false)),
     el('div', { class: 'table-wrap' }, table),
     el('p', { id: 'vehicleEmpty', class: 'empty-text', hidden: true, text: 'Bu filtrelere uyan araç yok. Hasar filtreleri yalnızca ilan sayfasından eklenen ilanlarda çalışır.' })
   ]));
@@ -961,13 +1025,18 @@ let renderTimer = null;
 function reloadAndRender() {
   clearTimeout(renderTimer);
   renderTimer = setTimeout(async () => {
+    // A read redraws often. Waiting here keeps an open dropdown or a half-typed note in place.
+    if (state.guarded && state.guarded.running && isEditing()) {
+      reloadAndRender();
+      return;
+    }
     await loadState();
     await renderView();
   }, 30);
 }
 
 chrome.storage.onChanged.addListener((changes) => {
-  if (changes.basket || changes.features || changes.sessionFeatures || changes.savedSearches || changes.manualRates || changes.vehicleTerms) reloadAndRender();
+  if (changes.basket || changes.features || changes.sessionFeatures || changes.savedSearches || changes.manualRates || changes.vehicleTerms || (changes.guardedState && currentView() === 'vehicles')) reloadAndRender();
 });
 window.addEventListener('hashchange', () => {
   state.statusText = '';

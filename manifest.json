@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "İlan Veri İndirici: Sahibinden İlanlarını CSV'ye Aktar",
-  "version": "1.8.1",
+  "version": "1.9.0",
   "description": "Sahibinden ilanlarını CSV ve JSON olarak indirin. Emlak, vasıta ve tüm kategorilerde liste ve ilan sayfalarını dışa aktarın.",
   "permissions": ["activeTab", "scripting", "downloads", "storage", "alarms", "notifications", "sidePanel"],
   "background": {

@@ -306,6 +306,79 @@
       transform: rotate(180deg);
     }
 
+    table.listings tbody tr.row-toggle:hover td,
+    table.listings tbody tr.listing-row[aria-expanded="true"] td {
+      background: var(--raised);
+    }
+
+    table.vehicle-table th {
+      padding-left: 7px;
+      padding-right: 7px;
+    }
+
+    table.vehicle-table td {
+      padding-left: 7px;
+      padding-right: 7px;
+    }
+
+    table.vehicle-table .cell-title {
+      min-width: 170px;
+    }
+
+    table.vehicle-table .thumb {
+      width: 56px;
+      height: 42px;
+    }
+
+    table.vehicle-table .detail-row td {
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    table.listings tr.series-year td {
+      font-size: 13px;
+      background: var(--raised);
+    }
+
+    table.listings tr.series-year td:first-child {
+      padding-left: 34px;
+    }
+
+    .series-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .series-toggle .icon {
+      width: 14px;
+      height: 14px;
+      color: var(--muted);
+    }
+
+    tr[aria-expanded="true"] .series-toggle .icon {
+      transform: rotate(180deg);
+    }
+
+    .th-sort {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 0;
+      font: inherit;
+      color: inherit;
+      background: none;
+      border: none;
+      white-space: inherit;
+      text-align: inherit;
+      cursor: pointer;
+    }
+
+    .th-sort:hover,
+    th[aria-sort] .th-sort {
+      color: var(--text);
+    }
+
     .detail-row td {
       padding: 4px 10px 16px 10px;
       background: var(--raised);

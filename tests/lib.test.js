@@ -285,6 +285,14 @@ test('vehicles of a series are summed up per make and series', () => {
   assert.strictEqual(group.key, 'VW Golf');
   assert.strictEqual(group.count, 4);
   assert.strictEqual(group.minPrice, 900);
+  assert.strictEqual(group.maxPrice, 5000);
+  assert.deepStrictEqual(group.years.map((year) => [year.year, year.count, year.minPrice, year.maxPrice, year.medianPrice, year.medianKm]), [
+    [2020, 1, 5000, 5000, 5000, 10000],
+    [2013, 1, 1200, 1200, 1200, 100000],
+    [2012, 2, 900, 1000, 950, 150000]
+  ]);
+  const unknown = lib.vehicleGroups([car('1', 2012, 100, 900), { id: '2', category: ['Vasıta'], fields: { Marka: 'VW', Seri: 'Golf' }, price: { amount: 800, currency: 'TL' } }]);
+  assert.deepStrictEqual(unknown[0].years.map((year) => year.year), [2012, null]);
 });
 
 test('vehicle filters keep the right cars and put missing values last', () => {
@@ -300,6 +308,26 @@ test('vehicle filters keep the right cars and put missing values last', () => {
   assert.deepStrictEqual(ids({ series: 'VW Golf', sortBy: 'km' }), ['2', '1']);
   assert.deepStrictEqual(ids({ damage: 'noChanged', sortBy: 'km' }), ['2', '3']);
   assert.deepStrictEqual(ids({ damage: 'clean', sortBy: 'km' }), ['3']);
+});
+
+test('every vehicle column sorts, with missing values last in both directions', () => {
+  const car = (id, fields, extra) => ({ id, category: ['Vasıta'], fields: { Marka: 'VW', ...fields }, price: { amount: 10, currency: 'TL' }, ...extra });
+  const records = [
+    car('1', { Seri: 'Çelik', Model: 'B 10', Renk: 'Beyaz', 'Yıl': '2016', KM: '100000' }, { title: 'İkinci', dateIso: '2026-11-01', location: 'İzmir' }),
+    car('2', { Seri: 'Astra', Model: 'B 9', Renk: 'Ak', 'Yıl': '2024', KM: '100000' }, { title: 'Birinci', dateIso: '2026-11-03', location: 'Adana' }),
+    car('3', { Seri: 'Zafira', 'Yıl': '2020' }, { title: 'Üçüncü', location: 'Şırnak' })
+  ];
+  const ids = (sortBy, descending) => lib.filterVehicles(records, { sortBy, descending }).map((record) => record.id);
+  assert.deepStrictEqual(ids('series'), ['2', '1', '3']);
+  assert.deepStrictEqual(ids('series', true), ['3', '1', '2']);
+  assert.deepStrictEqual(ids('model'), ['2', '1', '3']);
+  assert.deepStrictEqual(ids('model', true), ['1', '2', '3']);
+  assert.deepStrictEqual(ids('title'), ['2', '1', '3']);
+  assert.deepStrictEqual(ids('color'), ['2', '1', '3']);
+  assert.deepStrictEqual(ids('date', true), ['2', '1', '3']);
+  assert.deepStrictEqual(ids('place'), ['2', '1', '3']);
+  assert.deepStrictEqual(ids('yearly'), ['1', '2', '3']);
+  assert.deepStrictEqual(ids('yearly', true), ['2', '1', '3']);
 });
 
 test('exact facts come from published figures and written text only', () => {

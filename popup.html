@@ -231,6 +231,36 @@
       padding: 10px 0;
     }
 
+    .card-row-main.row-toggle {
+      grid-template-columns: 76px minmax(0, 1fr);
+      border-radius: 6px;
+    }
+
+    .card-row-main.row-toggle:hover .list-title {
+      text-decoration: underline;
+    }
+
+    .series-row.row-toggle:hover {
+      background: var(--raised);
+    }
+
+    .series-row .series-chevron {
+      width: 12px;
+      height: 12px;
+      margin-right: 4px;
+      color: var(--muted);
+      vertical-align: -1px;
+    }
+
+    .series-row[aria-expanded="true"] .series-chevron {
+      transform: rotate(180deg);
+    }
+
+    .series-row.series-year {
+      padding-left: 18px;
+      background: var(--raised);
+    }
+
     .card-thumb {
       width: 76px;
       height: 57px;

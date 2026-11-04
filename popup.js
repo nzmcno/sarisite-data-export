@@ -17,6 +17,8 @@ const app = {
   openFolds: new Set(),
   vehicleFilters: { series: '', damage: '', sortBy: 'page', descending: false },
   vehicleExpanded: new Set(),
+  seriesOpen: new Set(),
+  guarded: null,
   vehicleScope: null,
   emlakFilters: { subtype: '', sortBy: 'page', descending: false },
   emlakExpanded: new Set(),
@@ -90,6 +92,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 });
 
+/** A read redraws often. Waiting here keeps an open dropdown or a half-typed note in place. */
+let refreshTimer = null;
+function refreshSoon() {
+  clearTimeout(refreshTimer);
+  if (app.guarded && app.guarded.running && isEditing()) refreshTimer = setTimeout(refreshSoon, 500);
+  else refresh(false);
+}
+
 /** A switch changed here or in the workspace: redraw everything it affects right away */
 async function applyFeatureChange() {
   app.features = await loadFeatures();
@@ -106,7 +116,7 @@ chrome.storage.onChanged.addListener((changes) => {
       ? `İndirme bitti: ${total - errorCount}/${total}${errors}`
       : `İndiriliyor: ${done}/${total}${errors}. Pencereyi kapatsan da devam eder.`;
   }
-  if (changes.basket || changes.vehicleTerms || changes.manualRates || changes.savedSearches) refresh(false);
+  if (changes.basket || changes.vehicleTerms || changes.manualRates || changes.savedSearches) refreshSoon();
   if (changes.actionSurface) renderSurfacePicker();
   if (changes.guardedState) refreshGuarded();
 });
@@ -361,21 +371,11 @@ function expandButton(isOpen, onclick) {
   });
 }
 
+const readerTab = () => (app.tab && isSahibinden(app.tab.url) ? app.tab.id : undefined);
+
 /** A listing known only from a results table. Its description is read by opening it, or by the high-risk switch. */
 function unreadListing(record, say) {
-  if (!app.features.readWithoutOpening || !app.page || !record.url) {
-    return el('p', { class: 'small muted', text: 'Açıklama, hasar ve teknik bilgi ilan sayfasındadır. İlanı açıp sepete eklersen burada da görünür. Açmadan okumak Deneysel’deki yüksek riskli bir özelliktir.' });
-  }
-  return el('button', {
-    class: 'btn', type: 'button', icon: 'search', text: 'Açmadan oku (yüksek risk)',
-    title: 'Siteye 1 istek gönderir ve günlük sınıra sayılır',
-    onclick: async (event) => {
-      event.currentTarget.disabled = true;
-      say('İlan okunuyor...');
-      const result = await chrome.runtime.sendMessage({ action: 'enrich-start', data: { tabId: app.tab.id, listings: [{ id: record.id, url: record.url }] } });
-      say(result.status === 'error' ? result.error : 'İstek gönderildi. Sonuç gelince burada görünür.');
-    }
-  });
+  return renderReadOne(record, app.features, app.guarded, readerTab(), say);
 }
 
 function descriptionOrRead(record, say) {
@@ -521,8 +521,8 @@ function addListingButton(record) {
   });
 }
 
-function listingCard({ record, specs, summary, chips, isOpen, onToggle, details }) {
-  const holder = el('div', { class: 'list-row' }, el('div', { class: 'card-row-main' }, [
+function listingCard({ record, specs, summary, chips, isOpen, onToggle, details, wholeRow }) {
+  const main = el('div', { class: 'card-row-main', 'data-row': record.id }, [
     record.image ? el('img', { class: 'card-thumb', src: record.image, alt: '', loading: 'lazy' }) : el('div', { class: 'card-thumb' }),
     el('div', { style: 'min-width: 0' }, [
       el('a', { class: 'list-title', href: record.url, target: '_blank', rel: 'noopener', text: record.title, title: record.title }),
@@ -531,8 +531,10 @@ function listingCard({ record, specs, summary, chips, isOpen, onToggle, details 
       summary.length > 0 ? el('div', { class: 'list-meta', style: 'margin-top: 4px' }, summary.map((text) => el('span', { text }))) : null,
       chips ? el('div', { style: 'margin-top: 4px' }, chips) : null
     ]),
-    expandButton(isOpen, onToggle)
-  ]));
+    wholeRow ? null : expandButton(isOpen, onToggle)
+  ]);
+  if (wholeRow) toggleOnClick(main, isOpen, onToggle);
+  const holder = el('div', { class: 'list-row' }, main);
   if (isOpen) holder.appendChild(el('div', { class: 'list-row-detail' }, details().filter(Boolean)));
   return holder;
 }
@@ -566,22 +568,23 @@ function drawVehicles() {
   if (groups.length > 0) {
     parts.push(el('section', { class: 'card' }, [
       el('h2', { class: 'card-title', text: 'Seri özeti' }),
-      el('div', {}, groups.slice(0, 8).map((group) => el('div', { class: 'series-row' }, [
-        el('div', {}, [
-          el('div', { style: 'font-weight: 600', text: group.key }),
-          el('div', { class: 'muted', text: `${formatNumber(group.count)} ilan${group.medianKm ? `, medyan ${formatNumber(group.medianKm)} km` : ''}` })
-        ]),
-        el('div', { class: 'series-figures' }, [
-          el('div', { style: 'font-weight: 650', text: group.medianPrice ? `${formatNumber(group.medianPrice)} ${group.currency}` : '-' }),
-          el('div', { class: 'muted', text: group.minPrice ? `en düşük ${formatNumber(group.minPrice)}` : '' })
-        ])
-      ])))
+      el('div', {}, groups.slice(0, 8).flatMap((group) => {
+        const isOpen = app.seriesOpen.has(group.key);
+        const row = toggleOnClick(seriesRow(group, group.key, true), isOpen, () => {
+          if (isOpen) app.seriesOpen.delete(group.key);
+          else app.seriesOpen.add(group.key);
+          drawVehicles();
+        });
+        return isOpen ? [row, ...group.years.map((year) => seriesRow(year, year.year === null ? 'Yıl belirtilmemiş' : `${year.year} model`, false))] : [row];
+      }))
     ]));
   }
 
   const rowsHost = el('div', { class: 'row-list' });
+  const stripHost = el('div');
   const drawRows = () => {
     const rows = filterVehicles(records, app.vehicleFilters);
+    stripHost.replaceChildren(...[renderReadStrip(rows, app.features, app.guarded)].filter(Boolean));
     rowsHost.replaceChildren(...rows.map((record) => vehicleCard(record, drawRows)));
     if (rows.length === 0) rowsHost.appendChild(el('p', { class: 'small muted', style: 'padding: 12px 0', text: 'Bu filtrelere uyan araç yok. Hasar filtreleri yalnızca ilan sayfası okunmuş ilanlarda çalışır.' }));
   };
@@ -599,6 +602,7 @@ function drawVehicles() {
     })
   ]));
   parts.push(
+    stripHost,
     el('section', { class: 'card' }, [
       el('div', { style: 'margin-bottom: 8px' }, renderVehicleFilters(records, app.vehicleFilters, drawRows)),
       rowsHost
@@ -608,6 +612,24 @@ function drawVehicles() {
   const scroll = $('vehicles-tab').scrollTop;
   board.replaceChildren(...parts);
   $('vehicles-tab').scrollTop = scroll;
+}
+
+function seriesRow(figures, label, isGroup) {
+  const money = (amount) => formatNumber(amount);
+  return el('div', { class: `series-row${isGroup ? '' : ' series-year'}`, 'data-series': label }, [
+    el('div', { style: 'min-width: 0' }, [
+      el('div', { style: 'font-weight: 600' }, [
+        isGroup ? el('span', { icon: 'chevron', class: 'series-chevron', 'aria-hidden': 'true', style: 'display: inline-block' }) : null,
+        el('span', { text: label })
+      ]),
+      el('div', { class: 'muted', text: `${formatNumber(figures.count)} ilan${figures.medianKm ? `, medyan ${formatNumber(figures.medianKm)} km` : ''}` })
+    ]),
+    el('div', { class: 'series-figures' }, [
+      el('div', { style: 'font-weight: 650', text: figures.medianPrice ? `${money(figures.medianPrice)} ${figures.currency}` : '-' }),
+      el('div', { class: 'muted', text: figures.minPrice ? `en düşük ${money(figures.minPrice)}` : '' }),
+      el('div', { class: 'muted', text: figures.maxPrice ? `en yüksek ${money(figures.maxPrice)}` : '' })
+    ])
+  ]);
 }
 
 function vehicleCard(record, redraw) {
@@ -621,11 +643,14 @@ function vehicleCard(record, redraw) {
     isOpen,
     specs: vehicleSpecs(record),
     summary: mileage ? [mileage.sentence] : [],
-    chips: renderDamageChips(record),
+    chips: isReading(record, app.guarded) ? readingMark('Okunuyor') : renderDamageChips(record),
+    wholeRow: true,
     onToggle: () => {
       if (isOpen) app.vehicleExpanded.delete(record.id);
       else app.vehicleExpanded.add(record.id);
       redraw();
+      const row = $('vehicleBoard').querySelector(`[data-row="${CSS.escape(record.id)}"]`);
+      if (row) row.focus({ preventScroll: true });
     },
     details: () => [
       renderPhotoBlock(record, say),
@@ -1168,6 +1193,8 @@ async function startGuardedTool(feature) {
 async function refreshGuarded() {
   const status = await chrome.runtime.sendMessage({ action: 'guarded-status' });
   if (!status || status.status === 'error') return;
+  app.guarded = status;
+  if (!isEditing()) drawVehicles();
   const cooling = status.cooldownUntil > Date.now();
   const enabled = GUARDED_TOOLS.filter((tool) => app.features[tool.feature]);
   const holder = $('guardedTools');
@@ -1191,7 +1218,7 @@ async function refreshGuarded() {
     ? `Çalışma başına en fazla ${status.maxListingsPerRun} ilan veya ${status.maxPagesPerRun} sayfa, günde ${status.maxPerDay} istek, istekler arası ${status.delaySeconds} sn. Bugün: ${status.usedToday}.`
     : '';
   if (status.running) {
-    $('guardedMessage').textContent = `${status.label}: ${status.done}/${status.total}. Bu sekmede kal.`;
+    $('guardedMessage').textContent = `${status.label}: ${status.done}/${status.total}. Sahibinden sekmesini kapatma.`;
   } else if (cooling) {
     const minutes = Math.ceil((status.cooldownUntil - Date.now()) / 60000);
     $('guardedMessage').textContent = `${status.lastMessage} Kalan süre: ${minutes} dk.`;

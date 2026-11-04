@@ -289,6 +289,7 @@ async function handleGuardedStatus() {
     delaySeconds: REQUEST_DELAY_MS / 1000,
     cooldownUntil: guardedState.cooldownUntil || 0,
     lastMessage: guardedState.lastMessage || '',
+    pendingIds: guardedRun ? guardedRun.pendingIds : [],
     done: guardedRun ? guardedRun.done : guardedState.done || 0,
     total: guardedRun ? guardedRun.total : guardedState.total || 0
   };
@@ -315,17 +316,19 @@ function describeFailure(result) {
 }
 
 /** Runs one request per item, spaced out, and stops for good on the first failure */
-async function runGuarded(label, items, work) {
+async function runGuarded(label, items, work, { idOf = null } = {}) {
   const status = await handleGuardedStatus();
   const queue = items.slice(0, Math.max(0, MAX_REQUESTS_PER_DAY - status.usedToday));
+  const pendingFrom = (index) => (idOf ? queue.slice(index).map(idOf) : []);
   let dayCount = status.usedToday;
-  guardedRun = { label, stop: false, done: 0, total: queue.length };
-  await setGuardedState({ label, done: 0, total: queue.length, lastMessage: '' });
+  guardedRun = { label, stop: false, done: 0, total: queue.length, pendingIds: pendingFrom(0) };
+  await setGuardedState({ label, done: 0, total: queue.length, lastMessage: '', pendingIds: guardedRun.pendingIds });
 
   const finish = async (lastMessage, cooldown) => {
     await setGuardedState({
       lastMessage,
       done: guardedRun.done,
+      pendingIds: [],
       cooldownUntil: cooldown ? Date.now() + COOLDOWN_MS : 0
     });
     guardedRun = null;
@@ -350,30 +353,40 @@ async function runGuarded(label, items, work) {
       return;
     }
     guardedRun.done += 1;
-    await setGuardedState({ done: guardedRun.done });
+    guardedRun.pendingIds = pendingFrom(index + 1);
+    await setGuardedState({ done: guardedRun.done, pendingIds: guardedRun.pendingIds });
     if (index + 1 < queue.length) await wait(REQUEST_DELAY_MS);
   }
   await finish(`Tamamlandı: ${guardedRun.done}/${queue.length}.`, false);
 }
 
-async function startGuarded(featureId, label, items, work) {
+async function startGuarded(featureId, label, items, work, options) {
   const features = await loadFeatures();
   if (!features[featureId]) return { status: 'error', error: 'Bu özellik kapalı.' };
   const reason = await guardedBlockReason();
   if (reason) return { status: 'error', error: reason };
   if (items.length === 0) return { status: 'error', error: 'Okunacak bir şey yok.' };
-  runGuarded(label, items, work);
+  runGuarded(label, items, work, options);
   return { status: 'started', total: items.length };
 }
 
-function handleEnrichStart({ tabId, listings }) {
-  return startGuarded('readWithoutOpening', 'İlanı açmadan oku', listings.slice(0, MAX_LISTINGS_PER_RUN), async (listing) => {
-    const result = await runInTab(tabId, 'fetchListingInPage', [listing.url]);
+/** The workspace has no tab of its own on the site, so its reads go through an open one */
+async function openSiteTab() {
+  const tabs = await chrome.tabs.query({ url: '*://*.sahibinden.com/*' });
+  return tabs.find((candidate) => candidate.status === 'complete');
+}
+
+async function handleEnrichStart({ tabId, listings }) {
+  const features = await loadFeatures();
+  const readerTabId = tabId || (features.readWithoutOpening ? ((await openSiteTab()) || {}).id : null);
+  if (features.readWithoutOpening && !readerTabId) return { status: 'error', error: 'Önce bir sahibinden sekmesi aç.' };
+  return startGuarded('readWithoutOpening', 'İlanlar okunuyor', listings.slice(0, MAX_LISTINGS_PER_RUN), async (listing) => {
+    const result = await runInTab(readerTabId, 'fetchListingInPage', [listing.url]);
     if (result && result.status === 'ok') {
       await updateBasket((basket) => mergeRecord(basket, detailToRecord(result.listing), new Date().toISOString()));
     }
     return result;
-  });
+  }, { idOf: (listing) => listing.id });
 }
 
 function handlePaginateStart({ tabId, page }) {
@@ -409,8 +422,7 @@ async function runSavedSearchCheck() {
   if (!features.savedSearchCheck || !features.snapshots) return;
   if (await guardedBlockReason()) return;
 
-  const tabs = await chrome.tabs.query({ url: '*://*.sahibinden.com/*' });
-  const tab = tabs.find((candidate) => candidate.status === 'complete');
+  const tab = await openSiteTab();
   if (!tab) return;
 
   const { savedSearches = {} } = await chrome.storage.local.get('savedSearches');

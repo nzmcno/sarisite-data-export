@@ -717,7 +717,18 @@ function filterVehicles(records, filters) {
     if (damage === 'clean') return !!counts && counts.changed + counts.painted + counts.localPainted === 0;
     return true;
   };
+  const now = Date.now();
   const values = {
+    series: (record) => (record.fields || {}).Seri || (record.category || [])[3],
+    model: (record) => (record.fields || {}).Model,
+    title: (record) => record.title,
+    color: (record) => (record.fields || {}).Renk,
+    date: (record) => (record.dateIso ? Date.parse(record.dateIso) : null),
+    place: (record) => recordPlace(record),
+    yearly: (record) => {
+      const [yearly] = pickComputed(record, now, ['Ortalama Yıllık KM']);
+      return yearly ? yearly[1] : null;
+    },
     price: (record) => (record.price ? record.price.amount : null),
     km: (record) => toNumber((record.fields || {}).KM),
     year: (record) => toNumber((record.fields || {})['Yıl']),
@@ -728,12 +739,41 @@ function filterVehicles(records, filters) {
   };
   const read = values[sortBy];
   if (!read) return vehicles.filter(passes);
-  return vehicles.filter(passes).sort((a, b) => {
-    const [first, second] = [read(a), read(b)];
-    if (first === null || first === undefined) return second === null || second === undefined ? 0 : 1;
-    if (second === null || second === undefined) return -1;
-    return descending ? second - first : first - second;
+  const missing = (value) => value === null || value === undefined || value === '';
+  const compare = (a, b) => (typeof a === 'string' ? a.localeCompare(String(b), 'tr', { numeric: true }) : a - b);
+  return vehicles.filter(passes)
+    .map((record) => [read(record), record])
+    .sort(([first], [second]) => {
+      if (missing(first)) return missing(second) ? 0 : 1;
+      if (missing(second)) return -1;
+      return descending ? compare(second, first) : compare(first, second);
+    })
+    .map(([, record]) => record);
+}
+
+function seriesFigures(members, currency) {
+  const prices = members.filter((record) => record.price && record.price.currency === currency).map((record) => record.price.amount).filter((price) => price > 0);
+  return {
+    count: members.length,
+    currency,
+    medianPrice: middleOf(prices),
+    minPrice: prices.length ? Math.min(...prices) : null,
+    maxPrice: prices.length ? Math.max(...prices) : null,
+    medianKm: middleOf(members.map((record) => toNumber((record.fields || {}).KM)))
+  };
+}
+
+/** The same figures per model year, newest first. Cars with no year go last. */
+function seriesYears(members, currency) {
+  const years = new Map();
+  members.forEach((record) => {
+    const year = toNumber((record.fields || {})['Yıl']);
+    if (!years.has(year)) years.set(year, []);
+    years.get(year).push(record);
   });
+  return [...years.entries()]
+    .sort(([a], [b]) => (a === null ? 1 : b === null ? -1 : b - a))
+    .map(([year, group]) => ({ year, ...seriesFigures(group, currency) }));
 }
 
 /** One summary row per make and series, largest group first */
@@ -747,15 +787,7 @@ function vehicleGroups(records) {
   });
   return [...groups.entries()].map(([key, members]) => {
     const { currency } = computeStats(members);
-    const prices = members.filter((record) => record.price && record.price.currency === currency).map((record) => record.price.amount);
-    return {
-      key,
-      count: members.length,
-      currency,
-      medianPrice: middleOf(prices),
-      minPrice: prices.filter((price) => price > 0).length ? Math.min(...prices.filter((price) => price > 0)) : null,
-      medianKm: middleOf(members.map((record) => toNumber((record.fields || {}).KM)))
-    };
+    return { key, ...seriesFigures(members, currency), years: seriesYears(members, currency) };
   }).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key, 'tr'));
 }
 

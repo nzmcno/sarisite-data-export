@@ -3,7 +3,7 @@
 🚀 **Profesyonel Chrome Uzantısı** - Sahibinden.com ilanlarını CSV ve JSON olarak indirin. Görselleri kaydedin. Türkçe karakter desteği ile tam uyumlu.
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Uzantı-4285F4?style=for-the-badge&logo=google-chrome&logoColor=white)](https://chrome.google.com/webstore)
-[![Version](https://img.shields.io/badge/Sürüm-1.8.1-success?style=for-the-badge)](https://github.com/your-username/sahibinden-data-exporter)
+[![Version](https://img.shields.io/badge/Sürüm-1.9.0-success?style=for-the-badge)](https://github.com/your-username/sahibinden-data-exporter)
 [![License](https://img.shields.io/badge/Lisans-MIT-blue?style=for-the-badge)](LICENSE)
 
 ## 🎯 Kimler İçin Mükemmel
@@ -56,7 +56,7 @@ Araç raporu her araç ilanında çalışır, düğmesi yoktur. Yalnızca açık
 - **Teknik veriler:** Motor, yakıt, boyut ve model donanımı. Bunlar modelin genel verileridir, o araca özel olmayabilir.
 - **Araç bölümü:** Sepetteki araçlar seri özetiyle listelenir, seriye ve hasara göre süzülür; fiyat, KM, yıl ve hasara göre sıralanır.
 - **Ortalama yıllık KM cümlesi:** "2016 model, 2026 itibarıyla 10 yılda 357.000 km yapmış. Yılda ortalama 35.700 km." Yalnızca model yılı, bugünün yılı ve ilandaki KM ile hesaplanır. Bu yılın aracında yazılmaz.
-- **İlan açıklaması:** Tamamı saklanır ve CSV'ye girer. Ekranda ilk 400 karakter görünür, "Tamamını aç" ile hepsi açılır. Liste satırından okunmamış ilanın açıklaması ilan açılınca ya da Deneysel'deki yüksek riskli "İlanı açmadan oku" ile gelir.
+- **İlan açıklaması:** Tamamı saklanır ve CSV'ye girer. Ekranda ilk 400 karakter görünür, "Tamamını aç" ile hepsi açılır. Liste satırından okunmamış ilanın açıklaması ilan açılınca ya da Ayarlar'daki yüksek riskli "İlanı açmadan oku" ile gelir.
 - **Her yerde:** Araç raporu ve Araç bölümü yan panelde, küçük pencerede ve çalışma alanında aynıdır.
 
 - **Kartlar:** Araçlar Marka, Seri, Model, Yıl, KM, Renk, Fiyat, İlan Tarihi ve İl / İlçe ile listelenir. Site bir sütunu listede göstermiyorsa o alan ilan sayfası okunana kadar boş kalır.
@@ -281,7 +281,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔄 Version History
 
-### v1.8.1 (Current)
+### v1.9.0 (Current)
+
+- "İlanı açmadan oku" works one listing at a time from the Araç section, including the workspace, with a spinner that keeps the page usable. The limits stay as they were
+- The workspace vehicle table sorts by clicking a header and opens a row by clicking it
+- Araç cards in the side panel open by clicking them
+- Seri özeti shows the highest price and opens by model year
+- New logo: a green house with a car, on yellow. The rest of the interface keeps its colors
+
+### v1.8.1
 
 - New name: İlan Veri İndirici: Sahibinden İlanlarını CSV'ye Aktar
 - New icon, the orange tag used inside the extension

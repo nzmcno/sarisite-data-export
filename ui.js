@@ -429,6 +429,23 @@ function renderTechnical(record, openSet) {
   return card;
 }
 
+/** Opens a row by clicking anywhere on it, except its links and buttons, or by Enter and Space. Selecting text does not count as a click. */
+function toggleOnClick(node, isOpen, toggle) {
+  node.tabIndex = 0;
+  node.classList.add('row-toggle');
+  node.setAttribute('aria-expanded', String(isOpen));
+  node.addEventListener('click', (event) => {
+    if (event.target.closest('a, button, input, select, label') || String(window.getSelection())) return;
+    toggle();
+  });
+  node.addEventListener('keydown', (event) => {
+    if (event.target !== node || (event.key !== 'Enter' && event.key !== ' ')) return;
+    event.preventDefault();
+    toggle();
+  });
+  return node;
+}
+
 /** D, B and L counts for one listing, used wherever vehicles are listed */
 function renderDamageChips(record) {
   const counts = damageCounts(record.damage);
@@ -442,8 +459,56 @@ function renderDamageChips(record) {
   ]);
 }
 
-/** Series, damage and sort pickers. They change the filters object they are given. */
-function renderVehicleFilters(records, filters, onChange) {
+const isEditing = () => !!document.activeElement && document.activeElement.matches('select, textarea, input:not([type="checkbox"])');
+const isReading = (record, status) => !!status && (status.pendingIds || []).includes(record.id);
+const readingMark = (text) => el('span', { class: 'reading-mark' }, [el('span', { class: 'spinner', 'aria-hidden': 'true' }), el('span', { text })]);
+
+function startReading(records, tabId, say) {
+  return chrome.runtime.sendMessage({ action: 'enrich-start', data: { tabId, listings: records.map((record) => ({ id: record.id, url: record.url })) } })
+    .then((result) => {
+      if (result.status === 'error') say(result.error);
+    });
+}
+
+/** One unread listing: a read button with the high-risk switch on, otherwise a pointer to it */
+function renderReadOne(record, features, status, tabId, say) {
+  if (isReading(record, status)) return readingMark('Okunuyor');
+  if (!features.readWithoutOpening) {
+    return el('p', { class: 'small muted', text: 'Açıklama, hasar ve teknik bilgi ilan sayfasındadır. İlanı açıp sepete eklersen burada da görünür. Açmadan okumak Ayarlar’daki yüksek riskli bir özelliktir.' });
+  }
+  return el('button', {
+    class: 'btn', type: 'button', icon: 'search', text: 'Açmadan oku (yüksek risk)', disabled: !record.url || !!(status && (status.running || status.cooldownUntil > Date.now())),
+    title: 'Siteye 1 istek gönderir ve günlük sınıra sayılır',
+    onclick: () => startReading([record], tabId, say)
+  });
+}
+
+/** Progress of a read and how to start one. It sits in the page, so everything else stays usable while a read goes on. */
+function renderReadStrip(records, features, status) {
+  const unread = records.filter((record) => !record.hasDetail && record.url).length;
+  const strip = el('div', { class: 'read-strip', role: 'status' });
+  if (status && status.running) {
+    strip.append(
+      readingMark(`${status.label}: ${formatNumber(status.done)}/${formatNumber(status.total)}. Sahibinden sekmesini kapatma.`),
+      el('button', { class: 'btn btn-danger', type: 'button', icon: 'stop', text: 'Durdur', onclick: () => chrome.runtime.sendMessage({ action: 'guarded-stop' }) })
+    );
+    return strip;
+  }
+  if (status && status.cooldownUntil > Date.now()) {
+    strip.append(el('span', { class: 'small', text: `${status.lastMessage} Kalan süre: ${Math.ceil((status.cooldownUntil - Date.now()) / 60000)} dk.` }));
+    return strip;
+  }
+  if (status && status.lastMessage) strip.append(el('span', { class: 'small muted', text: status.lastMessage }));
+  if (unread > 0) {
+    strip.append(el('span', { class: 'small muted', text: features.readWithoutOpening
+      ? `${formatNumber(unread)} ilanın ayrıntısı okunmadı. Satırı açıp tek tek okuyabilirsin.`
+      : `${formatNumber(unread)} ilanın ayrıntısı okunmadı. Okumak için ilanı aç ya da Ayarlar’dan "İlanı açmadan oku"yu aç (yüksek risk).` }));
+  }
+  return strip.childElementCount > 0 ? strip : null;
+}
+
+/** Series, damage and sort pickers. They change the filters object they are given. A table with sortable headers leaves out the sort pickers. */
+function renderVehicleFilters(records, filters, onChange, withSort = true) {
   const names = [...new Set(records.filter(isVehicle).map(vehicleSeriesName).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'tr'));
   const pick = (label, key, options, parse) => {
     const select = el('select', { 'aria-label': label }, options.map(([value, text]) => el('option', { value, text })));
@@ -457,8 +522,8 @@ function renderVehicleFilters(records, filters, onChange) {
   return el('div', { class: 'filters' }, [
     pick('Seri', 'series', [['', 'Tüm seriler'], ...names.map((name) => [name, name])]),
     pick('Hasar', 'damage', [['', 'Tüm hasarlar'], ['noChanged', 'Değişensiz'], ['clean', 'Boyasız, değişensiz']]),
-    pick('Sırala', 'sortBy', [['page', 'Liste sırası'], ['price', 'Fiyat'], ['km', 'KM'], ['year', 'Yıl'], ['damage', 'Hasar']]),
-    pick('Yön', 'descending', [['false', 'Artan'], ['true', 'Azalan']], (value) => value === 'true')
+    withSort ? pick('Sırala', 'sortBy', [['page', 'Liste sırası'], ['price', 'Fiyat'], ['km', 'KM'], ['year', 'Yıl'], ['damage', 'Hasar']]) : null,
+    withSort ? pick('Yön', 'descending', [['false', 'Artan'], ['true', 'Azalan']], (value) => value === 'true') : null
   ]);
 }
 
@@ -800,7 +865,7 @@ function pageMedianPrice(records) {
   return stat ? { amount: stat.median, currency: stat.unit, raw: '' } : null;
 }
 
-const BRAND_MARK = '<svg class="brand-mark" viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="7" fill="var(--accent)"/><path d="M13.6 6H8a2 2 0 0 0-2 2v5.6a2 2 0 0 0 .59 1.41l5.4 5.4a2 2 0 0 0 2.82 0l5.6-5.6a2 2 0 0 0 0-2.82l-5.4-5.4A2 2 0 0 0 13.6 6" fill="var(--on-accent)"/><circle cx="10.2" cy="10.2" r="1.5" fill="var(--accent)"/></svg>';
+const BRAND_MARK = '<svg class="brand-mark" viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="6.5" fill="#FFC800"/><path d="M13 3.4 23.2 11.2c.3.2.4.5.4.8V21.4c0 .7-.5 1.2-1.2 1.2H3.6c-.7 0-1.2-.5-1.2-1.2V12c0-.3.1-.6.4-.8z" fill="#0F6B3C"/><path d="M5.9 19v-2.5c0-1 .6-1.6 1.5-1.8l1-.2 1.5-2.6c.4-.7 1-1 1.8-1h2.6c.8 0 1.4.3 1.8 1l1.5 2.6 1 .2c.9.2 1.5.8 1.5 1.8V19z" fill="#FFC800"/><path d="M10.9 14.4l1-1.8c.1-.2.3-.3.5-.3h1.2c.2 0 .4.1.5.3l1 1.8z" fill="#0F6B3C"/><circle cx="9.4" cy="19" r="1.75" fill="#FFC800" stroke="#0F6B3C" stroke-width=".8"/><circle cx="16.6" cy="19" r="1.75" fill="#FFC800" stroke="#0F6B3C" stroke-width=".8"/></svg>';
 
 function hydrateBrand(root) {
   (root || document).querySelectorAll('[data-brand-mark]').forEach((holder) => {
