@@ -13,7 +13,7 @@ const FEATURES = [
   { id: 'liveRates', where: 'Sayfa bölümü, Sepet ve CSV', group: 'data', risk: 'low', title: 'Canlı kurlar', desc: 'Fiyatı dolar, euro, sterlin ve gram altın olarak gösterir. Yalnızca kur servislerine istek atar, ilan bilgisi göndermez.' },
   { id: 'manualRates', where: 'Bu ekranda ve canlı kurların yerine', group: 'data', risk: 'low', title: 'Elle kur', desc: 'Canlı kur yerine kendi girdiğin kuru kullanır.' },
   { id: 'extraData', where: 'İlan sayfası, Detay satırı ve CSV', group: 'data', risk: 'low', title: 'Ek ilan verisi', desc: 'Mağaza adı, yetki belge no, üyelik tarihi, video ve sanal tur bilgisini dışa aktarır.' },
-  { id: 'computedFields', where: 'İlan sayfası, Detay satırı ve CSV', group: 'data', risk: 'low', title: 'Hesaplanan alanlar', desc: 'İlan yaşı, net/brüt oranı, m² başına aidat, yıllık KM, emsal inşaat alanı gibi alanları ekler.' },
+  { id: 'computedFields', where: 'İlan sayfası, Detay satırı ve CSV', group: 'data', risk: 'low', title: 'Hesaplanan alanlar', desc: 'İlan yaşı, net/brüt oranı, m² başına aidat, ortalama yıllık KM, emsal inşaat alanı gibi alanları ekler.' },
 
   { id: 'notesTags', where: 'Sepet, her ilanın Detay satırı', group: 'workspace', risk: 'low', title: 'Not, etiket, puan', desc: 'İlanlara kendi notunu, etiketini ve puanını ekler.' },
   { id: 'basketFilters', where: 'Sepet, tablonun üstü', group: 'workspace', risk: 'low', title: 'Filtre ve sıralama', desc: 'Sepeti arar, filtreler ve sütuna göre sıralar.' },

@@ -204,7 +204,7 @@ test('each switch adds only its own columns', () => {
   const computed = header({ computedFields: true });
   assert.strictEqual(computed[1][computed[0].indexOf('Değişen Parça Sayısı')], 1);
   assert.strictEqual(computed[1][computed[0].indexOf('Araç Yaşı')], 4);
-  assert.strictEqual(computed[1][computed[0].indexOf('Yıllık KM')], 26125);
+  assert.strictEqual(computed[1][computed[0].indexOf('Ortalama Yıllık KM')], 26125);
 });
 
 test('rates convert from any currency and reject bad data', () => {
@@ -257,16 +257,30 @@ test('custom search words work and special characters are safe', () => {
   assert.deepStrictEqual(signals.map((signal) => [signal.label, signal.custom]), [['partikül', true], ['(son)', true]]);
 });
 
-test('vehicles are compared with the same series, close model years first', () => {
+test('yearly km is written out from the model year and this calendar year', () => {
+  const now = Date.parse('2026-11-04');
+  const car = (year, km) => ({ fields: { 'Yıl': year, KM: km } });
+  assert.deepStrictEqual(lib.vehicleMileage(car('2016', '357.000'), now), {
+    short: 'Yılda ortalama 35.700 km',
+    sentence: '2016 model, 2026 itibarıyla 10 yılda 357.000 km yapmış. Yılda ortalama 35.700 km.'
+  });
+  assert.strictEqual(lib.vehicleMileage(car('2026', '5.000'), now), null);
+  assert.strictEqual(lib.vehicleMileage(car('2027', '5.000'), now), null);
+  assert.strictEqual(lib.vehicleMileage(car('2016', '0'), now), null);
+  assert.strictEqual(lib.vehicleMileage(car(undefined, '5.000'), now), null);
+  assert.strictEqual(lib.vehicleMileage({ fields: { 'Oda Sayısı': '2+1' } }, now), null);
+});
+
+test('long text is cut at a word and short text stays whole', () => {
+  assert.strictEqual(lib.shortenText('  kısa metin ', 400), 'kısa metin');
+  assert.strictEqual(lib.shortenText('bir iki üç dört', 9), 'bir iki…');
+  assert.strictEqual(lib.shortenText('a'.repeat(20), 10), `${'a'.repeat(10)}…`);
+  assert.strictEqual(lib.shortenText(undefined, 10), '');
+});
+
+test('vehicles of a series are summed up per make and series', () => {
   const car = (id, year, km, amount) => ({ id, category: ['Vasıta', 'Otomobil'], fields: { Marka: 'VW', Seri: 'Golf', 'Yıl': String(year), KM: String(km) }, price: { amount, currency: 'TL' } });
   const records = [car('1', 2012, 100000, 900), car('2', 2012, 200000, 1000), car('3', 2013, 100000, 1200), car('4', 2020, 10000, 5000)];
-  const result = lib.vehicleComparison(records[0], records);
-  assert.strictEqual(result.count, 2);
-  assert.strictEqual(result.closeYears, true);
-  assert.strictEqual(result.priceDiff, -18);
-  assert.strictEqual(result.kmDiff, -33);
-  assert.strictEqual(lib.vehicleComparison(records[0], records.slice(0, 2)), null);
-  assert.strictEqual(lib.vehicleComparison({ id: '9', fields: {}, price: { amount: 5, currency: 'TL' } }, records), null);
   const [group] = lib.vehicleGroups(records);
   assert.strictEqual(group.key, 'VW Golf');
   assert.strictEqual(group.count, 4);
@@ -280,6 +294,7 @@ test('vehicle filters keep the right cars and put missing values last', () => {
   const changed = { changed: ['roof'], painted: [], localPainted: [], originalCount: 12, notes: [] };
   const records = [car('1', 'Golf', '300', changed), car('2', 'Golf', '100', painted), car('3', 'Polo', undefined, clean), { id: '4', category: ['Emlak'], fields: {} }];
   const ids = (filters) => lib.filterVehicles(records, filters).map((record) => record.id);
+  assert.deepStrictEqual(ids({}), ['1', '2', '3']);
   assert.deepStrictEqual(ids({ sortBy: 'km' }), ['2', '1', '3']);
   assert.deepStrictEqual(ids({ sortBy: 'km', descending: true }), ['1', '2', '3']);
   assert.deepStrictEqual(ids({ series: 'VW Golf', sortBy: 'km' }), ['2', '1']);
@@ -297,8 +312,9 @@ test('exact facts come from published figures and written text only', () => {
   assert.strictEqual(lib.parseInspection('', now), null);
   const record = { id: '1', category: ['Vasıta'], dateIso: '2026-11-01', description: 'Vize 02/2027 tramer 25.000 TL', price: { amount: 1000000, currency: 'TL' }, priceHistory: [{ amount: 1100000, currency: 'TL' }], fields: { 'Yıl': '2022', KM: '100000', 'Motor Gücü': '100 hp' } };
   const facts = Object.fromEntries(lib.vehicleFacts(record, now));
-  assert.strictEqual(facts['Yıllık KM'], '25.000');
-  assert.strictEqual(facts['KM Başına Fiyat'], '10 TL');
+  assert.strictEqual(facts['Ortalama Yıllık KM'], '25.000');
+  assert.strictEqual(facts['Toplam KM'], '100.000 km');
+  assert.strictEqual(facts['KM Başına Fiyat'], undefined);
   assert.strictEqual(facts['Beygir Başına Fiyat'], '10.000 TL');
   assert.strictEqual(facts['Muayene (Açıklamada)'], '02/2027, 3 ay kaldı');
   assert.strictEqual(facts['İlk Görülen Fiyat'], '1.100.000 TL (-%9)');
@@ -428,7 +444,7 @@ test('computed fields appear only when their inputs exist', () => {
   assert.strictEqual(homeFields['Yayında (gün)'], 3);
   assert.strictEqual(homeFields['Net/Brüt (%)'], 75);
   assert.strictEqual(homeFields['m² Başına Aidat'], 2.5);
-  assert.strictEqual(homeFields['Yıllık KM'], undefined);
+  assert.strictEqual(homeFields['Ortalama Yıllık KM'], undefined);
   const land = { price: { amount: 1000000 }, fields: { 'm²': '200', 'Kaks (Emsal)': '1.50' } };
   const landFields = Object.fromEntries(lib.computedFields(land, { now }));
   assert.strictEqual(landFields['Emsal İnşaat Alanı (m²)'], 300);

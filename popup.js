@@ -227,18 +227,18 @@ function detailView(page) {
     return `${name.replace(/ \/.*$/, '')}: ${record.fields[name]}`;
   };
 
+  const mileage = vehicleMileage(record, Date.now());
   const hero = el('section', { class: 'card' }, [
     el('p', { class: 'crumb', text: (listing.category || []).join(' › ') }),
     el('h2', { class: 'hero-title', text: listing.title }),
     el('p', { class: 'hero-figure', text: formatPrice(listing.price) }),
     el('p', { class: 'hero-note', text: listing.location.raw }),
+    mileage ? el('p', { class: 'hero-note', text: mileage.sentence }) : null,
     last ? el('p', { class: 'hero-note', text: `Önceki fiyat ${formatNumber(last.amount)} ${last.currency}` }) : null,
     facts.length > 0 ? el('div', { class: 'chips' }, facts.map((name) => el('span', { class: 'pill pill-neutral num', text: chip(name) }))) : null,
     saved ? el('div', { class: 'hero-tags' }, el('span', { class: 'pill pill-accent', text: 'Sepette' })) : null
   ]);
 
-  const vehicle = isVehicle(record);
-  const comparison = vehicle ? vehicleComparison(record, others) : null;
   const insights = listingInsights(record, app.features, { ...basketContext(others, Date.now()), now: Date.now() });
   const parcel = parcelFromFields(listing.attributes);
   const links = el('div', { class: 'link-row' }, [
@@ -246,38 +246,20 @@ function detailView(page) {
       class: 'btn', type: 'button', icon: 'map', text: 'Parseli TKGM’de aç', disabled: !parcel,
       title: parcel ? `Ada ${parcel.ada}, Parsel ${parcel.parsel}` : 'Bu ilanda ada ve parsel bilgisi yok',
       onclick: () => openTkgmParcel(listing.location, parcel, setPageMessage)
-    }) : null,
-    vehicle && listing.id ? el('a', {
-      href: `https://x.com/search?q=${encodeURIComponent(`#${listing.id}`)}`, target: '_blank', rel: 'noopener', text: 'X’te bu ilanı ara'
     }) : null
   ]);
 
   return [
     hero,
     ratesBlock(listing.price),
-    comparison ? renderPeerComparison(comparison) : null,
     renderVehicleReport(record, app.terms),
     renderPhones(record),
+    renderDescription(record, app.openFolds),
     insights.length > 0 ? el('section', { class: 'card', id: 'pageInsights' }, [el('h2', { class: 'card-title', text: 'Bu ilan hakkında' }), renderFacts(insights)]) : null,
     app.features.notesTags ? el('section', { class: 'card' }, [el('h2', { class: 'card-title', text: 'Notların' }), renderNoteEditor(record.id)]) : null,
     renderTechnical(record, app.openFolds),
-    descriptionFold(record),
     links.childElementCount > 0 ? links : null
   ];
-}
-
-function descriptionFold(record) {
-  if (!record.description) return null;
-  const fold = el('details', { class: 'fold' }, [
-    el('summary', { text: 'İlan açıklaması' }),
-    el('p', { class: 'description-text', text: record.description })
-  ]);
-  if (app.openFolds.has('description')) fold.open = true;
-  fold.addEventListener('toggle', () => {
-    if (fold.open) app.openFolds.add('description');
-    else app.openFolds.delete('description');
-  });
-  return el('section', { class: 'card', style: 'padding-top: 4px; padding-bottom: 4px' }, fold);
 }
 
 function listRows(page, records) {
@@ -315,7 +297,7 @@ function listView(page) {
   const rowsHost = el('div', { class: 'row-list' });
   const drawRows = () => {
     const shown = listRows(page, records);
-    rowsHost.replaceChildren(...shown.map((item) => listRow(page, item.row, item.record, medianPrice)));
+    rowsHost.replaceChildren(...shown.map((item) => listRow(page, item.row, item.record)));
     if (shown.length === 0) rowsHost.appendChild(el('p', { class: 'small muted', text: 'Aramana uyan ilan yok.', style: 'padding: 12px 0' }));
   };
   const search = el('input', { type: 'search', placeholder: 'Bu sayfada ara', 'aria-label': 'Bu sayfada ara' });
@@ -342,18 +324,16 @@ function listView(page) {
   ];
 }
 
-function listRow(page, row, record, medianPrice) {
+function listRow(page, row, record) {
   const saved = app.basket[record.id];
   const isOpen = app.expanded.has(record.id);
   const fields = record.fields || {};
-  const diff = medianPrice && record.price && record.price.amount && record.price.currency === medianPrice.currency
-    ? Math.round(((record.price.amount - medianPrice.amount) / medianPrice.amount) * 100)
-    : null;
+  const mileage = vehicleMileage(record, Date.now());
   const counts = saved ? damageCounts(saved.damage) : null;
   const meta = [
     fields['Yıl'],
     toNumber(fields.KM) !== null ? `${formatNumber(toNumber(fields.KM))} km` : fields['m² (Brüt)'] ? `${fields['m² (Brüt)']} m²` : fields['m²'] ? `${fields['m²']} m²` : null,
-    diff === null || diff === 0 ? null : `Medyandan %${Math.abs(diff)} ${diff < 0 ? 'düşük' : 'yüksek'}`,
+    mileage ? mileage.short : null,
     counts ? `${counts.changed} D, ${counts.painted} B, ${counts.localPainted} L` : null,
     saved ? 'Sepette' : null
   ].filter(Boolean);
@@ -381,26 +361,35 @@ function expandButton(isOpen, onclick) {
   });
 }
 
+/** A listing known only from a results table. Its description is read by opening it, or by the high-risk switch. */
+function unreadListing(record, say) {
+  if (!app.features.readWithoutOpening || !app.page || !record.url) {
+    return el('p', { class: 'small muted', text: 'Açıklama, hasar ve teknik bilgi ilan sayfasındadır. İlanı açıp sepete eklersen burada da görünür. Açmadan okumak Deneysel’deki yüksek riskli bir özelliktir.' });
+  }
+  return el('button', {
+    class: 'btn', type: 'button', icon: 'search', text: 'Açmadan oku (yüksek risk)',
+    title: 'Siteye 1 istek gönderir ve günlük sınıra sayılır',
+    onclick: async (event) => {
+      event.currentTarget.disabled = true;
+      say('İlan okunuyor...');
+      const result = await chrome.runtime.sendMessage({ action: 'enrich-start', data: { tabId: app.tab.id, listings: [{ id: record.id, url: record.url }] } });
+      say(result.status === 'error' ? result.error : 'İstek gönderildi. Sonuç gelince burada görünür.');
+    }
+  });
+}
+
+function descriptionOrRead(record, say) {
+  if (record.description) return renderDescription(record, app.openFolds);
+  return record.hasDetail ? null : unreadListing(record, say);
+}
+
 function listRowDetail(page, row, record) {
   const saved = app.basket[record.id];
   const parts = [];
   if (saved && saved.hasDetail) {
-    parts.push(renderVehicleReport(saved, app.terms), renderPhones(saved));
-    const comparison = isVehicle(saved) ? vehicleComparison(saved, Object.values(app.basket)) : null;
-    if (comparison) parts.push(renderPeerComparison(comparison));
-  } else if (app.features.readWithoutOpening) {
-    parts.push(el('button', {
-      class: 'btn', type: 'button', icon: 'search', text: 'Açmadan oku (yüksek risk)',
-      title: 'Siteye 1 istek gönderir ve günlük sınıra sayılır',
-      onclick: async (event) => {
-        event.currentTarget.disabled = true;
-        setPageMessage('İlan okunuyor...');
-        const result = await chrome.runtime.sendMessage({ action: 'enrich-start', data: { tabId: app.tab.id, listings: [{ id: record.id, url: record.url }] } });
-        setPageMessage(result.status === 'error' ? result.error : 'İstek gönderildi. Sonuç gelince burada görünür.');
-      }
-    }));
+    parts.push(renderVehicleReport(saved, app.terms), renderPhones(saved), renderDescription(saved, app.openFolds));
   } else {
-    parts.push(el('p', { class: 'small muted', text: 'Hasar ve teknik bilgi ilan sayfasındadır. İlanı açıp sepete eklersen burada da görünür. Açmadan okumak Ayarlar’daki yüksek riskli bir özelliktir.' }));
+    parts.push(unreadListing(record, setPageMessage));
   }
   if (!saved) {
     parts.push(el('button', {
@@ -573,7 +562,6 @@ function drawVehicles() {
     return;
   }
 
-  const peers = [...new Map([...inBasket, ...onPage].map((record) => [record.id, record])).values()];
   const groups = vehicleGroups(records);
   if (groups.length > 0) {
     parts.push(el('section', { class: 'card' }, [
@@ -594,7 +582,7 @@ function drawVehicles() {
   const rowsHost = el('div', { class: 'row-list' });
   const drawRows = () => {
     const rows = filterVehicles(records, app.vehicleFilters);
-    rowsHost.replaceChildren(...rows.map((record) => vehicleCard(record, peers, drawRows)));
+    rowsHost.replaceChildren(...rows.map((record) => vehicleCard(record, drawRows)));
     if (rows.length === 0) rowsHost.appendChild(el('p', { class: 'small muted', style: 'padding: 12px 0', text: 'Bu filtrelere uyan araç yok. Hasar filtreleri yalnızca ilan sayfası okunmuş ilanlarda çalışır.' }));
   };
   drawRows();
@@ -622,22 +610,17 @@ function drawVehicles() {
   $('vehicles-tab').scrollTop = scroll;
 }
 
-function vehicleCard(record, peers, redraw) {
+function vehicleCard(record, redraw) {
   const now = Date.now();
-  const comparison = vehicleComparison(record, peers);
+  const say = (text) => { $('boardMessage').textContent = text; };
   const facts = vehicleFacts(record, now);
-  const yearly = facts.find(([name]) => name === 'Yıllık KM');
-  const perKm = facts.find(([name]) => name === 'KM Başına Fiyat');
+  const mileage = vehicleMileage(record, now);
   const isOpen = app.vehicleExpanded.has(record.id);
   return listingCard({
     record,
     isOpen,
     specs: vehicleSpecs(record),
-    summary: [
-      yearly ? `Yılda ${yearly[1]} km` : null,
-      perKm ? `KM başına ${perKm[1]}` : null,
-      comparison && comparison.priceDiff !== null ? `Seriye göre ${peerDiffText(comparison)}` : null
-    ].filter(Boolean),
+    summary: mileage ? [mileage.sentence] : [],
     chips: renderDamageChips(record),
     onToggle: () => {
       if (isOpen) app.vehicleExpanded.delete(record.id);
@@ -645,12 +628,12 @@ function vehicleCard(record, peers, redraw) {
       redraw();
     },
     details: () => [
-      renderPhotoBlock(record, (text) => { $('boardMessage').textContent = text; }),
+      renderPhotoBlock(record, say),
       addListingButton(record),
       factsCard('Kesin bilgiler', facts),
-      comparison ? renderPeerComparison(comparison) : null,
       renderVehicleReport(record, app.terms),
       renderPhones(record),
+      descriptionOrRead(record, say),
       renderTechnical(record, app.openFolds)
     ]
   });
@@ -830,7 +813,7 @@ async function renderBasket() {
   const moreHost = el('div', { style: 'margin-top: 8px' });
   const drawRows = () => {
     const shown = visibleBasket(records);
-    rowsHost.replaceChildren(...shown.slice(0, app.basketShown).map((record) => basketCard(record, records, drawRows)));
+    rowsHost.replaceChildren(...shown.slice(0, app.basketShown).map((record) => basketCard(record, drawRows)));
     if (shown.length === 0) rowsHost.appendChild(el('p', { class: 'small muted', style: 'padding: 12px 0', text: 'Aramana uyan ilan yok.' }));
     moreHost.replaceChildren(...(shown.length > app.basketShown ? [el('button', {
       class: 'btn', type: 'button', text: `Daha fazla göster (${formatNumber(shown.length - app.basketShown)} ilan kaldı)`,
@@ -941,7 +924,7 @@ function selectBar(shown, records, hiddenColumns, context, redraw) {
   ]);
 }
 
-function basketCard(record, records, redraw) {
+function basketCard(record, redraw) {
   const fields = record.fields || {};
   const kind = recordKind(record);
   const isOpen = app.basketExpanded.has(record.id);
@@ -956,8 +939,7 @@ function basketCard(record, records, redraw) {
   });
   const parcel = parcelFromFields(fields);
   const place = { il: fields['İl'], ilce: fields['İlçe'], mahalle: fields['Mahalle'] };
-  const peers = records.filter(isVehicle);
-  const comparison = kind === 'vehicle' ? vehicleComparison(record, peers) : null;
+  const mileage = vehicleMileage(record, Date.now());
   const holder = el('div', { class: 'list-row' }, el('div', { class: 'card-row-main basket-card-main' }, [
     box,
     record.image ? el('img', { class: 'card-thumb', src: record.image, alt: '', loading: 'lazy' }) : el('div', { class: 'card-thumb' }),
@@ -965,6 +947,7 @@ function basketCard(record, records, redraw) {
       el('a', { class: 'list-title', href: record.url, target: '_blank', rel: 'noopener', text: record.title, title: record.title }),
       el('div', { class: 'list-price', text: formatPrice(record.price) }),
       renderSpecs(specs),
+      mileage ? el('div', { class: 'list-meta', style: 'margin-top: 4px', text: mileage.sentence }) : null,
       kind === 'vehicle' ? el('div', { style: 'margin-top: 4px' }, renderDamageChips(record)) : null
     ]),
     expandButton(isOpen, () => {
@@ -977,8 +960,8 @@ function basketCard(record, records, redraw) {
     holder.appendChild(el('div', { class: 'list-row-detail' }, [
       renderPhotoBlock(record, basketMessage),
       factsCard('Kesin bilgiler', facts),
-      comparison ? renderPeerComparison(comparison) : null,
       kind === 'vehicle' ? renderVehicleReport(record, app.terms) : null,
+      descriptionOrRead(record, basketMessage),
       app.features.tkgm && parcel && place.il && place.ilce && place.mahalle ? el('button', {
         class: 'btn', type: 'button', icon: 'map', text: 'Parseli TKGM’de aç',
         onclick: () => openTkgmParcel(place, parcel, basketMessage)

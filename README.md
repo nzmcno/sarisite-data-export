@@ -54,12 +54,14 @@ Araç raporu her araç ilanında çalışır, düğmesi yoktur. Yalnızca açık
 - **Satıcının açıklaması:** Şase, podye, direk, airbag, KM, tramer, muayene, ekspertiz ve bakım geçen cümleler satıcının kendi sözleriyle gösterilir. Eklenti bunları yorumlamaz.
 - **Kendi kelimelerin:** Çalışma alanındaki Araç bölümünden aranacak kelime ekleyebilirsin. Her kelime rapora ve CSV'ye ayrı sütun olarak girer.
 - **Teknik veriler:** Motor, yakıt, boyut ve model donanımı. Bunlar modelin genel verileridir, o araca özel olmayabilir.
-- **Araç bölümü:** Sepetteki araçlar seri özetiyle listelenir, hasara ve seriye göre fiyat farkına göre süzülür.
+- **Araç bölümü:** Sepetteki araçlar seri özetiyle listelenir, seriye ve hasara göre süzülür; fiyat, KM, yıl ve hasara göre sıralanır.
+- **Ortalama yıllık KM cümlesi:** "2016 model, 2026 itibarıyla 10 yılda 357.000 km yapmış. Yılda ortalama 35.700 km." Yalnızca model yılı, bugünün yılı ve ilandaki KM ile hesaplanır. Bu yılın aracında yazılmaz.
+- **İlan açıklaması:** Tamamı saklanır ve CSV'ye girer. Ekranda ilk 400 karakter görünür, "Tamamını aç" ile hepsi açılır. Liste satırından okunmamış ilanın açıklaması ilan açılınca ya da Deneysel'deki yüksek riskli "İlanı açmadan oku" ile gelir.
 - **Her yerde:** Araç raporu ve Araç bölümü yan panelde, küçük pencerede ve çalışma alanında aynıdır.
 
 - **Kartlar:** Araçlar Marka, Seri, Model, Yıl, KM, Renk, Fiyat, İlan Tarihi ve İl / İlçe ile listelenir. Site bir sütunu listede göstermiyorsa o alan ilan sayfası okunana kadar boş kalır.
 - **Fotoğraf:** Her ilanın bir fotoğrafı büyük gösterilir, indirilebilir ve linki kopyalanabilir.
-- **Kesin bilgiler:** Araç yaşı, yıllık KM, KM ve beygir başına fiyat, yayında geçen gün, ilk görülen fiyat, açıklamada yazıyorsa muayene tarihi ve tramer. Hepsi yayımlanmış rakamlardan hesaplanır ya da satıcının yazdığıdır, tahmin yoktur.
+- **Kesin bilgiler:** Araç yaşı, toplam KM, ortalama yıllık KM, beygir başına fiyat, yayında geçen gün, ilk görülen fiyat, açıklamada yazıyorsa muayene tarihi ve tramer. Hepsi yayımlanmış rakamlardan hesaplanır ya da satıcının yazdığıdır, tahmin yoktur.
 
 ### Sepet
 
@@ -279,7 +281,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔄 Version History
 
-### v1.7.0 (Current)
+### v1.8.0 (Current)
+
+- The comparison with other listings of the same series is gone from the Sayfa, Araç and Sepet tabs and the workspace, with its sort option and column
+- List rows no longer say how far a price is from the median
+- Vehicles say how many km a year they have done, from the model year and this calendar year
+- The description shows its first 400 characters with a "Tamamını aç" button, in the Sayfa, Araç and Sepet tabs and the workspace. Listings not read yet point to opening them or to "İlanı açmadan oku"
+- The X search link is gone
+
+### v1.7.0
 
 - The whole basket is in the side panel: search, sort, select all, compare, CSV and JSON of a selection, remove, clear, CSV columns and backup
 - Select all in the workspace basket

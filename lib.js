@@ -704,43 +704,12 @@ function percentFrom(value, base) {
   return value && base ? Math.round(((value - base) / base) * 100) : null;
 }
 
-/** This car against the same make and series in the basket. Needs 2 others, prefers close model years. */
-function vehicleComparison(record, records) {
-  const key = vehiclePeerKey(record);
-  if (!key || !record.price || !record.price.amount) return null;
-  const peers = records.filter((other) => other.id !== record.id
-    && isVehicle(other)
-    && vehiclePeerKey(other) === key
-    && other.price && other.price.amount
-    && other.price.currency === record.price.currency);
-  const year = toNumber((record.fields || {})['Yıl']);
-  const near = year === null ? [] : peers.filter((other) => {
-    const otherYear = toNumber((other.fields || {})['Yıl']);
-    return otherYear !== null && Math.abs(otherYear - year) <= 2;
-  });
-  const closeYears = near.length >= 2;
-  const group = closeYears ? near : peers;
-  if (group.length < 2) return null;
-  const medianPrice = middleOf(group.map((other) => other.price.amount));
-  const medianKm = middleOf(group.map((other) => toNumber((other.fields || {}).KM)));
-  return {
-    key,
-    closeYears,
-    count: group.length,
-    medianPrice,
-    medianKm,
-    currency: record.price.currency,
-    priceDiff: percentFrom(record.price.amount, medianPrice),
-    kmDiff: percentFrom(toNumber((record.fields || {}).KM), medianKm)
-  };
-}
-
 const vehicleSeriesName = (record) => vehiclePeerKey(record) || '';
 
 /** The vehicles in the basket after the series and damage filters, sorted. Missing values go last. */
 function filterVehicles(records, filters) {
   const vehicles = records.filter(isVehicle);
-  const { series = '', damage = '', sortBy = 'peer', descending = false } = filters || {};
+  const { series = '', damage = '', sortBy = 'page', descending = false } = filters || {};
   const passes = (record) => {
     const counts = damageCounts(record.damage);
     if (series && vehicleSeriesName(record) !== series) return false;
@@ -749,10 +718,6 @@ function filterVehicles(records, filters) {
     return true;
   };
   const values = {
-    peer: (record) => {
-      const comparison = vehicleComparison(record, vehicles);
-      return comparison ? comparison.priceDiff : null;
-    },
     price: (record) => (record.price ? record.price.amount : null),
     km: (record) => toNumber((record.fields || {}).KM),
     year: (record) => toNumber((record.fields || {})['Yıl']),
@@ -861,14 +826,38 @@ function vehicleFacts(record, now) {
   const km = toNumber(fields.KM);
   const power = String(fields['Motor Gücü'] || '').match(/^(\d+)\s*hp$/i);
   const inspection = parseInspection(record.description, now);
-  const facts = pickComputed(record, now, ['Araç Yaşı', 'Yıllık KM', 'Yayında (gün)']).map(([label, value]) => [label, trNumber(value, 1)]);
-  if (amount && km) facts.push(['KM Başına Fiyat', `${trNumber(amount / km, 1)} ${currency}`]);
+  const facts = pickComputed(record, now, ['Araç Yaşı', 'Ortalama Yıllık KM', 'Yayında (gün)']).map(([label, value]) => [label, trNumber(value, 1)]);
+  if (km !== null) facts.unshift(['Toplam KM', `${trNumber(km)} km`]);
   if (amount && power) facts.push(['Beygir Başına Fiyat', `${trNumber(amount / Number(power[1]))} ${currency}`]);
   if (inspection) {
     const left = inspection.monthsLeft;
     facts.push(['Muayene (Açıklamada)', `${inspection.text}, ${left > 0 ? `${left} ay kaldı` : left === 0 ? 'bu ay' : 'tarihi geçmiş'}`]);
   }
   return [...facts, ...priceChangeFact(record), ...descriptionFacts(record)];
+}
+
+/** Model year to this calendar year, written out. A car of this year has no yearly figure to give. */
+function vehicleMileage(record, now) {
+  const fields = record.fields || {};
+  const modelYear = toNumber(fields['Yıl']);
+  const km = toNumber(fields.KM);
+  const year = new Date(now || Date.now()).getFullYear();
+  const age = year - modelYear;
+  if (!modelYear || !km || age <= 0) return null;
+  const perYear = trNumber(Math.round(km / age));
+  return {
+    short: `Yılda ortalama ${perYear} km`,
+    sentence: `${modelYear} model, ${year} itibarıyla ${age} yılda ${trNumber(km)} km yapmış. Yılda ortalama ${perYear} km.`
+  };
+}
+
+/** The start of a long text, cut at a word. A text that fits comes back whole. */
+function shortenText(text, limit) {
+  const value = String(text == null ? '' : text).trim();
+  if (value.length <= limit) return value;
+  const start = value.slice(0, limit);
+  const lastSpace = start.search(/\s\S*$/);
+  return `${(lastSpace > limit / 2 ? start.slice(0, lastSpace) : start).trimEnd()}…`;
 }
 
 /** The biggest copy of a photo. Showcase thumbnails have no such copy, so the page falls back to the original. */
@@ -1054,7 +1043,7 @@ function computedFields(record, context) {
     const age = now.getFullYear() - year;
     add('Araç Yaşı', age);
     const km = number('KM');
-    if (km !== null) add('Yıllık KM', age > 0 ? Math.round(km / age) : km);
+    if (km !== null) add('Ortalama Yıllık KM', age > 0 ? Math.round(km / age) : km);
   }
   if (record.damage) {
     add('Değişen Parça Sayısı', record.damage.changed.length);
@@ -1156,7 +1145,7 @@ function toTsv(rows) {
 const COLUMN_PRESETS = {
   emlak: { label: 'Emlak', keep: ['İlan No', 'İlan Linki', 'İlan Fotoğraf Linki', 'Başlık', 'Fiyat', 'Para Birimi', 'Hesaplanan Fiyat/m²', 'Konum', 'm² (Brüt)', 'm² (Net)', 'Oda Sayısı', 'Bina Yaşı', 'Bulunduğu Kat', 'Kat Sayısı', 'Isıtma', 'Aidat (TL)', 'Site Adı', 'Kimden', 'İlan Tarihi (ISO)'] },
   arsa: { label: 'Arsa', keep: ['İlan No', 'İlan Linki', 'İlan Fotoğraf Linki', 'Başlık', 'Fiyat', 'Para Birimi', 'm²', 'm² Fiyatı', 'Konum', 'İmar Durumu', 'Ada No', 'Parsel No', 'Kaks (Emsal)', 'Gabari', 'Tapu Durumu', 'Kimden', 'İlan Tarihi (ISO)'] },
-  vasita: { label: 'Vasıta', keep: ['İlan No', 'İlan Linki', 'İlan Fotoğraf Linki', 'Başlık', 'Fiyat', 'Para Birimi', 'Marka', 'Seri', 'Model', 'Yıl', 'KM', 'Yakıt / Motor Tipi', 'Vites', 'Kasa Tipi', 'Renk', 'Ağır Hasar Kayıtlı', 'Motor Gücü', 'Motor Hacmi', 'Çekiş', 'Değişen Parçalar', 'Boyalı Parçalar', 'Lokal Boyalı Parçalar', 'Hasar Notları', 'Değişen Parça Sayısı', 'Boyalı Parça Sayısı', 'Yıllık KM', 'Açıklamada Tramer', 'Açıklama: Şase, podye, direk', 'Açıklama: Airbag', 'Açıklama: KM', 'Açıklama: Tramer ve hasar kaydı', 'Açıklama: Muayene', 'Açıklamadaki Telefon', 'Konum', 'Kimden', 'İlan Tarihi (ISO)'] }
+  vasita: { label: 'Vasıta', keep: ['İlan No', 'İlan Linki', 'İlan Fotoğraf Linki', 'Başlık', 'Fiyat', 'Para Birimi', 'Marka', 'Seri', 'Model', 'Yıl', 'KM', 'Yakıt / Motor Tipi', 'Vites', 'Kasa Tipi', 'Renk', 'Ağır Hasar Kayıtlı', 'Motor Gücü', 'Motor Hacmi', 'Çekiş', 'Değişen Parçalar', 'Boyalı Parçalar', 'Lokal Boyalı Parçalar', 'Hasar Notları', 'Değişen Parça Sayısı', 'Boyalı Parça Sayısı', 'Ortalama Yıllık KM', 'Açıklamada Tramer', 'Açıklama: Şase, podye, direk', 'Açıklama: Airbag', 'Açıklama: KM', 'Açıklama: Tramer ve hasar kaydı', 'Açıklama: Muayene', 'Açıklamadaki Telefon', 'Konum', 'Kimden', 'İlan Tarihi (ISO)'] }
 };
 
 function hiddenColumnsForPreset(presetId, allNames) {
@@ -1383,7 +1372,8 @@ if (typeof module !== 'undefined') {
     vehicleSignals,
     signalText,
     damageCounts,
-    vehicleComparison,
+    vehicleMileage,
+    shortenText,
     vehicleGroups,
     vehicleSeriesName,
     filterVehicles,

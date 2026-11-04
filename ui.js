@@ -370,33 +370,32 @@ function renderVehicleReport(record, terms) {
   return card;
 }
 
-function comparisonText(comparison) {
-  const describe = (diff, higher, lower) => {
-    if (diff === null) return null;
-    if (diff === 0) return 'medyanla aynı';
-    return `%${Math.abs(diff)} ${diff > 0 ? higher : lower}`;
-  };
-  return {
-    scope: `Sepetteki ${comparison.count} ${comparison.key} ilanına göre${comparison.closeYears ? ' (±2 model yılı)' : ''}`,
-    price: describe(comparison.priceDiff, 'pahalı', 'ucuz'),
-    km: describe(comparison.kmDiff, 'fazla', 'az')
-  };
-}
+const DESCRIPTION_LIMIT = 400;
 
-function renderPeerComparison(comparison) {
-  const text = comparisonText(comparison);
-  const stat = (label, value, base) => el('div', { class: 'peer-stat' }, [
-    el('span', { class: 'small muted', text: label }),
-    el('span', { class: 'peer-value', text: value }),
-    el('span', { class: 'small muted', text: base })
-  ]);
-  return el('section', { class: 'card' }, [
-    el('h2', { class: 'card-title', text: text.scope }),
-    el('div', { class: 'peer-stats' }, [
-      text.price ? stat('Fiyat', text.price, `Medyan ${formatNumber(comparison.medianPrice)} ${comparison.currency}`) : null,
-      text.km ? stat('KM', text.km, `Medyan ${formatNumber(comparison.medianKm)} km`) : null
-    ])
-  ]);
+/** The seller's text, whole in storage and short on screen until asked. openSet keeps it open across redraws. */
+function renderDescription(record, openSet = new Set()) {
+  const full = String(record.description || '').trim();
+  if (!full) return null;
+  const short = shortenText(full, DESCRIPTION_LIMIT);
+  const body = el('p', { class: 'description-text', text: short });
+  const card = el('section', { class: 'card' }, [el('h2', { class: 'card-title', text: 'İlan açıklaması' }), body]);
+  if (short === full) return card;
+  const key = `description:${record.id}`;
+  const toggle = el('button', { class: 'btn-link', type: 'button', style: 'margin-top: 6px' });
+  const draw = () => {
+    const isOpen = openSet.has(key);
+    body.textContent = isOpen ? full : short;
+    toggle.textContent = isOpen ? 'Kısalt' : `Tamamını aç (${formatNumber(full.length)} karakter)`;
+    toggle.setAttribute('aria-expanded', String(isOpen));
+  };
+  toggle.addEventListener('click', () => {
+    if (openSet.has(key)) openSet.delete(key);
+    else openSet.add(key);
+    draw();
+  });
+  draw();
+  card.appendChild(toggle);
+  return card;
 }
 
 /** Model-wide specs in collapsible groups. openSet remembers which ones stay open across redraws. */
@@ -443,12 +442,6 @@ function renderDamageChips(record) {
   ]);
 }
 
-function peerDiffText(comparison) {
-  if (!comparison || comparison.priceDiff === null) return '';
-  const { priceDiff } = comparison;
-  return `${priceDiff > 0 ? '+' : priceDiff < 0 ? '-' : ''}%${Math.abs(priceDiff)}`;
-}
-
 /** Series, damage and sort pickers. They change the filters object they are given. */
 function renderVehicleFilters(records, filters, onChange) {
   const names = [...new Set(records.filter(isVehicle).map(vehicleSeriesName).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'tr'));
@@ -464,7 +457,7 @@ function renderVehicleFilters(records, filters, onChange) {
   return el('div', { class: 'filters' }, [
     pick('Seri', 'series', [['', 'Tüm seriler'], ...names.map((name) => [name, name])]),
     pick('Hasar', 'damage', [['', 'Tüm hasarlar'], ['noChanged', 'Değişensiz'], ['clean', 'Boyasız, değişensiz']]),
-    pick('Sırala', 'sortBy', [['page', 'Liste sırası'], ['peer', 'Seriye göre fiyat'], ['price', 'Fiyat'], ['km', 'KM'], ['year', 'Yıl'], ['damage', 'Hasar']]),
+    pick('Sırala', 'sortBy', [['page', 'Liste sırası'], ['price', 'Fiyat'], ['km', 'KM'], ['year', 'Yıl'], ['damage', 'Hasar']]),
     pick('Yön', 'descending', [['false', 'Artan'], ['true', 'Azalan']], (value) => value === 'true')
   ]);
 }

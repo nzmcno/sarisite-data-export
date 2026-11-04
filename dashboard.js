@@ -26,7 +26,7 @@ const state = {
   scatterField: '',
   statusText: '',
   vehicleTerms: [],
-  vehicleFilters: { series: '', damage: '', sortBy: 'peer', descending: false },
+  vehicleFilters: { series: '', damage: '', sortBy: 'page', descending: false },
   emlakFilters: { subtype: '', sortBy: 'page', descending: false }
 };
 
@@ -672,19 +672,17 @@ function expandCell(isOpen, toggle) {
 }
 
 function renderVehicleRows(table) {
-  const vehicles = state.records.filter(isVehicle);
   const rows = vehicleRows();
   const head = table.querySelector('thead');
   const body = table.querySelector('tbody');
-  const headers = ['Fotoğraf', 'Seri', 'Model', 'İlan Başlığı', 'Yıl', 'KM', 'Renk', 'Fiyat', 'İlan Tarihi', 'İl / İlçe', 'Yıllık KM', 'Hasar', 'Seriye göre', ''];
-  const rightAligned = ['Yıl', 'KM', 'Fiyat', 'Yıllık KM', 'Seriye göre'];
-  head.replaceChildren(el('tr', {}, headers.map((text) => el('th', { class: rightAligned.includes(text) ? 'right' : null, text }))));
+  const headers = ['Fotoğraf', 'Seri', 'Model', 'İlan Başlığı', 'Yıl', 'KM', 'Renk', 'Fiyat', 'İlan Tarihi', 'İl / İlçe', 'Ortalama Yıllık KM', 'Hasar', ''];
+  const rightAligned = ['Yıl', 'KM', 'Fiyat', 'Ortalama Yıllık KM'];
+  head.replaceChildren(el('tr', {}, headers.map((text) => el('th', { class: text === 'Ortalama Yıllık KM' ? 'right th-wrap' : rightAligned.includes(text) ? 'right' : null, text }))));
   body.textContent = '';
   rows.forEach((record) => {
     const fields = record.fields || {};
-    const comparison = vehicleComparison(record, vehicles);
     const facts = vehicleFacts(record, Date.now());
-    const yearly = facts.find(([name]) => name === 'Yıllık KM');
+    const yearly = facts.find(([name]) => name === 'Ortalama Yıllık KM');
     const isOpen = state.expanded.has(record.id);
     body.appendChild(el('tr', { class: 'listing-row' }, [
       photoCell(record),
@@ -699,7 +697,6 @@ function renderVehicleRows(table) {
       el('td', { text: recordPlace(record) || '-' }),
       el('td', { class: 'right', text: yearly ? yearly[1] : '-' }),
       el('td', {}, renderDamageChips(record)),
-      el('td', { class: 'right', text: peerDiffText(comparison) || '-' }),
       expandCell(isOpen, () => {
         if (isOpen) state.expanded.delete(record.id);
         else state.expanded.add(record.id);
@@ -712,7 +709,8 @@ function renderVehicleRows(table) {
         el('div', { class: 'detail-fields' }, [
           renderPhotoBlock(record, setStatus),
           facts.length > 0 ? el('section', { class: 'card' }, [el('h2', { class: 'card-title', text: 'Kesin bilgiler' }), renderFacts(facts)]) : null,
-          renderPhones(record)
+          renderPhones(record),
+          renderDescription(record, state.expanded)
         ].filter(Boolean)),
         el('div', { class: 'detail-fields' }, [
           report || el('p', { class: 'small muted', text: 'Hasar bilgisi için ilanı açıp sepete ekle.' }),
