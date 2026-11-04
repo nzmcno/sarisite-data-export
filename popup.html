@@ -490,6 +490,41 @@
       color: var(--muted);
     }
 
+    .select-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 8px 0;
+      font-size: 12px;
+      font-weight: 600;
+      border-top: 1px solid var(--rule);
+    }
+
+    .select-all {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+    }
+
+    .basket-card-main {
+      grid-template-columns: 16px 64px minmax(0, 1fr) 28px;
+    }
+
+    .basket-card-main .card-thumb {
+      width: 64px;
+      height: 48px;
+    }
+
+    .confirm-box {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
     .basket-row {
       display: flex;
       justify-content: space-between;
@@ -624,20 +659,8 @@
 
   <!-- Basket Tab -->
   <section id="basket-tab" class="tab-content" role="tabpanel">
-    <div class="card lead">
-      <div>
-        <p id="basketSummary" class="lead-figure"></p>
-        <p id="basketCaption" class="lead-caption"></p>
-      </div>
-      <button id="basketCsvBtn" class="btn btn-primary btn-large" type="button" data-icon="download">CSV indir</button>
-      <div class="btn-row">
-        <button id="basketOpenBtn" class="btn btn-grow" type="button" data-icon="open">Çalışma alanında aç</button>
-        <button id="basketJsonBtn" class="btn" type="button" data-icon="braces">JSON</button>
-      </div>
-    </div>
     <p id="basketMessage" class="status-line" role="status"></p>
-    <div id="basketStats" class="card" hidden></div>
-    <div id="basketList" class="card" hidden></div>
+    <div id="basketBoard" class="page-main"></div>
   </section>
 
   <!-- Experimental Tab -->

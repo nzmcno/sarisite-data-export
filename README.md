@@ -3,7 +3,7 @@
 🚀 **Profesyonel Chrome Uzantısı** - Sahibinden.com ilanlarını CSV ve JSON olarak indirin. Görselleri kaydedin. Türkçe karakter desteği ile tam uyumlu.
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Uzantı-4285F4?style=for-the-badge&logo=google-chrome&logoColor=white)](https://chrome.google.com/webstore)
-[![Version](https://img.shields.io/badge/Sürüm-1.6.0-success?style=for-the-badge)](https://github.com/your-username/sahibinden-data-exporter)
+[![Version](https://img.shields.io/badge/Sürüm-1.7.0-success?style=for-the-badge)](https://github.com/your-username/sahibinden-data-exporter)
 [![License](https://img.shields.io/badge/Lisans-MIT-blue?style=for-the-badge)](LICENSE)
 
 ## 🎯 Kimler İçin Mükemmel
@@ -60,6 +60,10 @@ Araç raporu her araç ilanında çalışır, düğmesi yoktur. Yalnızca açık
 - **Kartlar:** Araçlar Marka, Seri, Model, Yıl, KM, Renk, Fiyat, İlan Tarihi ve İl / İlçe ile listelenir. Site bir sütunu listede göstermiyorsa o alan ilan sayfası okunana kadar boş kalır.
 - **Fotoğraf:** Her ilanın bir fotoğrafı büyük gösterilir, indirilebilir ve linki kopyalanabilir.
 - **Kesin bilgiler:** Araç yaşı, yıllık KM, KM ve beygir başına fiyat, yayında geçen gün, ilk görülen fiyat, açıklamada yazıyorsa muayene tarihi ve tramer. Hepsi yayımlanmış rakamlardan hesaplanır ya da satıcının yazdığıdır, tahmin yoktur.
+
+### Sepet
+
+Sepetin tamamı yan panelde. İlan arayabilir, sıralayabilir, tür seçebilir, tümünü seçebilir, seçilenleri karşılaştırabilir, CSV veya JSON indirebilir, silebilir, CSV sütunlarını ayarlayabilir ve sepeti temizleyebilirsin. Temizlemeden önce panel içinde onay ister. Yalnızca grafikler ve fırsat puanı ağırlıkları çalışma alanında kaldı.
 
 ### Emlak İlanları
 
@@ -275,7 +279,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔄 Version History
 
-### v1.6.0 (Current)
+### v1.7.0 (Current)
+
+- The whole basket is in the side panel: search, sort, select all, compare, CSV and JSON of a selection, remove, clear, CSV columns and backup
+- Select all in the workspace basket
+- Every export carries İlan Linki and İlan Fotoğraf Linki, and column presets keep them
+- Fırsat Puanı left the CSV. It stays on screen
+
+### v1.6.0
 
 - New Emlak tab and workspace section, split by the site's property kinds
 - Vehicle cards use the site's columns and show a photo with download and link

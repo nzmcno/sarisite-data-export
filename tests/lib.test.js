@@ -72,7 +72,7 @@ test('thousands separators go, other dotted values stay', () => {
 
 test('page csv keeps the original columns first and fills m² Fiyatı', () => {
   const [header, row] = lib.listPageToRows(page);
-  assert.deepStrictEqual(header.slice(0, 8), ['Resim', 'İlan Başlığı', 'm²', 'Fiyat', 'm² Fiyatı', 'İlan Tarihi', 'İl / İlçe', 'İlan Linki']);
+  assert.deepStrictEqual(header.slice(0, 8), ['İlan Fotoğraf Linki', 'İlan Başlığı', 'm²', 'Fiyat', 'm² Fiyatı', 'İlan Tarihi', 'İl / İlçe', 'İlan Linki']);
   assert.strictEqual(row[header.indexOf('m² Fiyatı')], 24884);
   assert.strictEqual(row[header.indexOf('İl / İlçe')], 'Kocaeli / Gebze');
   assert.strictEqual(row[header.indexOf('İlan No')], '1');
@@ -197,7 +197,7 @@ test('each switch adds only its own columns', () => {
   const header = (on) => lib.recordsToRows([record], [], { features: normalizeFeatures(on), rates: { USD: 50, EUR: 56, GBP: 67, GRA: 6300 }, annotations: { 9: { note: 'n', rating: 4 } }, now: Date.parse('2026-11-04') });
   assert.ok(header({ liveRates: true })[0].includes('Fiyat (Gram altın)'));
   assert.ok(header({ notesTags: true })[0].includes('Notum'));
-  assert.ok(header({ dealScore: true })[0].includes('Fırsat Puanı'));
+  assert.ok(!header({ dealScore: true })[0].includes('Fırsat Puanı'));
   assert.ok(header({ extraData: true })[0].includes('Mağaza'));
   const parsed = header({});
   assert.strictEqual(parsed[1][parsed[0].indexOf('Açıklamada Tramer')], 12500);
@@ -367,6 +367,23 @@ test('a saved listing keeps its detail when the results page updates it', () => 
   assert.strictEqual(merged.fields.KM, '6');
   assert.strictEqual(merged.price.amount, 2);
   assert.strictEqual(lib.withSaved(fresh, undefined), fresh);
+});
+
+test('every export carries the listing link and photo link, also after a column preset', () => {
+  const record = { id: '7', url: 'https://www.sahibinden.com/ilan/x-7/detay', title: 'T', image: 'https://i/lthmb_7.jpg', fields: { KM: '5' } };
+  const rows = lib.recordsToRows([record], [], { features: normalizeFeatures({ dealScore: true }) });
+  assert.strictEqual(rows[1][rows[0].indexOf('İlan Linki')], record.url);
+  assert.strictEqual(rows[1][rows[0].indexOf('İlan Fotoğraf Linki')], 'https://i/x5_7.jpg');
+  assert.ok(!rows[0].includes('Resim'));
+  assert.ok(!rows[0].includes('Fırsat Puanı'));
+  ['emlak', 'arsa', 'vasita'].forEach((preset) => {
+    const hidden = lib.hiddenColumnsForPreset(preset, rows[0]);
+    assert.ok(!hidden.includes('İlan Linki'), preset);
+    assert.ok(!hidden.includes('İlan Fotoğraf Linki'), preset);
+  });
+  assert.strictEqual(lib.recordKind({ category: ['Vasıta'] }), 'vehicle');
+  assert.strictEqual(lib.recordKind({ category: ['Emlak', 'Arsa'] }), 'emlak');
+  assert.strictEqual(lib.recordKind({ category: ['İş Makineleri'] }), 'other');
 });
 
 test('only vehicle listings count as vehicles', () => {

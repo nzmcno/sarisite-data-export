@@ -267,6 +267,11 @@ function filtersBar(onChange) {
 function selectionActions() {
   const holder = el('div', { id: 'selectionActions', class: 'btn-row' });
   const count = state.selected.size;
+  const chosen = () => state.records.filter((record) => state.selected.has(record.id));
+  holder.appendChild(el('button', {
+    class: 'btn', type: 'button', icon: 'download', text: `Seçilenleri CSV${count ? ` (${count})` : ''}`, disabled: count === 0,
+    onclick: () => downloadCsv(recordsToRows(chosen(), state.hiddenColumns, context()), `sahibinden_secilen_${todayIso()}.csv`)
+  }));
   holder.appendChild(el('button', {
     class: 'btn', type: 'button', icon: 'compare', text: `Karşılaştır${count ? ` (${count})` : ''}`, disabled: count < 2,
     title: count < 2 ? 'En az 2 ilan seç' : '',
@@ -280,6 +285,31 @@ function selectionActions() {
     }
   }));
   return holder;
+}
+
+/** Selects every listing the filters leave, also those past the "show more" button */
+function selectAllBox(records, table) {
+  const box = el('input', { type: 'checkbox', id: 'selectAll', 'aria-label': `Tümünü seç (${records.length} ilan)`, title: `Tümünü seç (${records.length} ilan)` });
+  const chosen = records.filter((record) => state.selected.has(record.id)).length;
+  box.checked = records.length > 0 && chosen === records.length;
+  box.indeterminate = chosen > 0 && chosen < records.length;
+  box.addEventListener('change', () => {
+    records.forEach((record) => {
+      if (box.checked) state.selected.add(record.id);
+      else state.selected.delete(record.id);
+    });
+    renderListingRows(table);
+  });
+  return box;
+}
+
+function refreshSelectAll() {
+  const box = $('selectAll');
+  if (!box) return;
+  const records = visibleRecords();
+  const chosen = records.filter((record) => state.selected.has(record.id)).length;
+  box.checked = records.length > 0 && chosen === records.length;
+  box.indeterminate = chosen > 0 && chosen < records.length;
 }
 
 function refreshSelectionActions() {
@@ -329,7 +359,7 @@ function renderListingRows(table) {
   body.textContent = '';
 
   const headRow = el('tr', {}, [
-    el('th', { 'aria-label': 'Seç' }),
+    el('th', {}, selectAllBox(records, table)),
     el('th', { 'aria-label': 'Görsel' }),
     el('th', { text: 'İlan' }),
     el('th', { class: 'right', text: 'Fiyat' }),
@@ -350,6 +380,7 @@ function renderListingRows(table) {
       if (check.checked) state.selected.add(record.id);
       else state.selected.delete(record.id);
       refreshSelectionActions();
+      refreshSelectAll();
     });
     const isOpen = state.expanded.has(record.id);
     const score = scoreOf ? scoreOf(record) : null;
@@ -860,81 +891,11 @@ async function viewSearches(view) {
  * ============================================================================
  */
 function columnsBlock() {
-  const picker = el('div', { class: 'column-list' });
-  const columns = basketColumns(state.records, context());
-  const renderChecks = () => {
-    picker.textContent = '';
-    columns.forEach((column) => {
-      const box = el('input', { type: 'checkbox' });
-      box.checked = !state.hiddenColumns.includes(column.name);
-      box.addEventListener('change', async () => {
-        state.hiddenColumns = state.hiddenColumns.filter((name) => name !== column.name);
-        if (!box.checked) state.hiddenColumns.push(column.name);
-        await chrome.storage.local.set({ hiddenColumns: state.hiddenColumns });
-      });
-      picker.appendChild(el('label', {}, [box, el('span', { text: column.name })]));
-    });
-  };
-  renderChecks();
-  const presets = el('div', { class: 'btn-row' });
-  if (state.features.columnPresets) {
-    const names = columns.map((column) => column.name);
-    [...Object.entries(COLUMN_PRESETS), ['all', { label: 'Tüm sütunlar' }]].forEach(([id, preset]) => {
-      presets.appendChild(el('button', {
-        class: 'btn', type: 'button', text: preset.label,
-        onclick: async () => {
-          state.hiddenColumns = id === 'all' ? [] : hiddenColumnsForPreset(id, names);
-          await chrome.storage.local.set({ hiddenColumns: state.hiddenColumns });
-          renderChecks();
-        }
-      }));
-    });
-  }
-  return el('section', { class: 'panel' }, [
-    el('h2', { text: 'CSV sütunları' }),
-    columns.length === 0 ? el('p', { class: 'small muted', text: 'Sepete ilan ekleyince sütunlar burada listelenir.' }) : null,
-    presets,
-    picker
-  ]);
+  return renderColumnPicker(state.records, context(), state.hiddenColumns, state.features, 'panel', (hidden) => { state.hiddenColumns = hidden; });
 }
 
 function backupBlock() {
-  if (!state.features.backup) return offCard(['backup']);
-  const fileInput = el('input', { type: 'file', accept: 'application/json,.json', hidden: true });
-  fileInput.addEventListener('change', async () => {
-    const [file] = fileInput.files;
-    if (!file) return;
-    const parsed = parseBackup(await file.text());
-    if (!parsed.ok) {
-      setStatus(parsed.error);
-      return;
-    }
-    const result = await chrome.runtime.sendMessage({ action: 'basket-restore', data: { data: parsed.data } });
-    setStatus(result.status === 'success' ? `${Object.keys(parsed.data.basket).length} ilan geri yüklendi.` : result.error);
-    fileInput.value = '';
-  });
-  const note = el('p', { class: 'message', style: 'margin-top: 10px' });
-  chrome.storage.local.getBytesInUse(null).then((bytes) => {
-    const quota = chrome.storage.local.QUOTA_BYTES || 10485760;
-    const percent = Math.round((bytes / quota) * 100);
-    note.textContent = `Depolama: ${formatNumber(bytes / 1048576, 1)} MB, sınırın %${percent}’i.${percent >= 80 ? ' Dolmak üzere, yedek alıp sepeti temizle.' : ''}`;
-  });
-  return el('section', { class: 'panel' }, [
-    el('h2', { text: 'Yedekle ve geri yükle' }),
-    el('p', { class: 'panel-note', text: 'Geri yükleme mevcut sepetin üzerine ekler. Aynı ilan varsa yedekteki sürüm kalır.' }),
-    el('div', { class: 'btn-row' }, [
-      el('button', {
-        class: 'btn', type: 'button', icon: 'download', text: 'Yedek indir',
-        onclick: async () => {
-          const stored = await chrome.storage.local.get(['basket', 'annotations', 'savedSearches', 'hiddenColumns', 'vehicleTerms']);
-          downloadJson({ app: 'ilan-veri-indirici', version: 1, savedAt: new Date().toISOString(), ...stored }, `ilan_veri_yedek_${todayIso()}.json`);
-        }
-      }),
-      el('button', { class: 'btn', type: 'button', icon: 'plus', text: 'Yedekten yükle', onclick: () => fileInput.click() }),
-      fileInput
-    ]),
-    note
-  ]);
+  return state.features.backup ? renderBackupBlock('panel', setStatus) : offCard(['backup']);
 }
 
 function viewData(view) {

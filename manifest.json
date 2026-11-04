@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sahibinden İlan Veri İndirici - CSV Dışa Aktarma",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Sahibinden ilanlarını CSV ve JSON olarak indirin. Emlak, vasıta ve tüm kategorilerde liste ve ilan sayfalarını dışa aktarın.",
   "permissions": ["activeTab", "scripting", "downloads", "storage", "alarms", "notifications", "sidePanel"],
   "background": {

@@ -1,6 +1,6 @@
 // compare.js - Side-by-side view of basket listings, built only from locally saved data
 
-const SKIPPED_COLUMNS = ['Resim', 'Fotoğraflar', 'Açıklama', 'İlk Görülme', 'Son Görülme', 'İlan Linki'];
+const SKIPPED_COLUMNS = ['İlan Fotoğraf Linki', 'Fotoğraflar', 'Açıklama', 'İlk Görülme', 'Son Görülme', 'İlan Linki'];
 
 async function renderComparison() {
   const ids = decodeURIComponent(location.hash.slice(1)).split(',');
@@ -23,7 +23,9 @@ async function renderComparison() {
     if (record.image) cell.appendChild(el('img', { class: 'photo', src: record.image, alt: '' }));
   });
 
-  basketColumns(records, { features, rates, annotations, scoreWeights, now: Date.now() })
+  const derived = basketContext(records, Date.now());
+  const scoreColumn = features.dealScore ? [{ name: 'Fırsat Puanı', read: (record) => dealScore(record, derived, scoreWeights) }] : [];
+  [...scoreColumn, ...basketColumns(records, { features, rates, annotations, scoreWeights, now: Date.now() })]
     .filter((column) => !SKIPPED_COLUMNS.includes(column.name))
     .forEach((column) => {
       const values = records.map((record) => {

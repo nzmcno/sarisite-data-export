@@ -574,6 +574,89 @@ function renderEmlakSort(filters, onChange) {
   return select;
 }
 
+/** Which columns a CSV has, saved for every page. onChange gets the new list of hidden names. */
+function renderColumnPicker(records, context, hiddenColumns, features, className, onChange) {
+  let hidden = [...hiddenColumns];
+  const picker = el('div', { class: 'column-list' });
+  const columns = basketColumns(records, context);
+  const save = async () => {
+    onChange(hidden);
+    await chrome.storage.local.set({ hiddenColumns: hidden });
+  };
+  const renderChecks = () => {
+    picker.textContent = '';
+    columns.forEach((column) => {
+      const box = el('input', { type: 'checkbox' });
+      box.checked = !hidden.includes(column.name);
+      box.addEventListener('change', () => {
+        hidden = hidden.filter((name) => name !== column.name);
+        if (!box.checked) hidden.push(column.name);
+        save();
+      });
+      picker.appendChild(el('label', {}, [box, el('span', { text: column.name })]));
+    });
+  };
+  renderChecks();
+  const presets = el('div', { class: 'btn-row' });
+  if (features.columnPresets) {
+    const names = columns.map((column) => column.name);
+    [...Object.entries(COLUMN_PRESETS), ['all', { label: 'Tüm sütunlar' }]].forEach(([id, preset]) => {
+      presets.appendChild(el('button', {
+        class: 'btn', type: 'button', text: preset.label,
+        onclick: () => {
+          hidden = id === 'all' ? [] : hiddenColumnsForPreset(id, names);
+          save();
+          renderChecks();
+        }
+      }));
+    });
+  }
+  return el('section', { class: className }, [
+    el('h2', { text: 'CSV sütunları' }),
+    columns.length === 0 ? el('p', { class: 'small muted', text: 'Sepete ilan ekleyince sütunlar burada listelenir.' }) : null,
+    presets,
+    picker
+  ]);
+}
+
+function renderBackupBlock(className, onStatus) {
+  const fileInput = el('input', { type: 'file', accept: 'application/json,.json', hidden: true });
+  fileInput.addEventListener('change', async () => {
+    const [file] = fileInput.files;
+    if (!file) return;
+    const parsed = parseBackup(await file.text());
+    if (!parsed.ok) {
+      onStatus(parsed.error);
+      return;
+    }
+    const result = await chrome.runtime.sendMessage({ action: 'basket-restore', data: { data: parsed.data } });
+    onStatus(result.status === 'success' ? `${Object.keys(parsed.data.basket).length} ilan geri yüklendi.` : result.error);
+    fileInput.value = '';
+  });
+  const note = el('p', { class: 'message', style: 'margin-top: 10px' });
+  chrome.storage.local.getBytesInUse(null).then((bytes) => {
+    const quota = chrome.storage.local.QUOTA_BYTES || 10485760;
+    const percent = Math.round((bytes / quota) * 100);
+    note.textContent = `Depolama: ${formatNumber(bytes / 1048576, 1)} MB, sınırın %${percent}’i.${percent >= 80 ? ' Dolmak üzere, yedek alıp sepeti temizle.' : ''}`;
+  });
+  return el('section', { class: className }, [
+    el('h2', { text: 'Yedekle ve geri yükle' }),
+    el('p', { class: 'small muted', text: 'Geri yükleme mevcut sepetin üzerine ekler. Aynı ilan varsa yedekteki sürüm kalır.', style: 'margin: 2px 0 10px' }),
+    el('div', { class: 'btn-row' }, [
+      el('button', {
+        class: 'btn', type: 'button', icon: 'download', text: 'Yedek indir',
+        onclick: async () => {
+          const stored = await chrome.storage.local.get(['basket', 'annotations', 'savedSearches', 'hiddenColumns', 'vehicleTerms']);
+          downloadJson({ app: 'ilan-veri-indirici', version: 1, savedAt: new Date().toISOString(), ...stored }, `ilan_veri_yedek_${todayIso()}.json`);
+        }
+      }),
+      el('button', { class: 'btn', type: 'button', icon: 'plus', text: 'Yedekten yükle', onclick: () => fileInput.click() }),
+      fileInput
+    ]),
+    note
+  ]);
+}
+
 /** Numbers the seller wrote in the description. The site's protected phone field is not read. */
 function renderPhones(record) {
   const phones = extractPhones(record.description);

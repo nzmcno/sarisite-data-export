@@ -20,7 +20,12 @@ const app = {
   vehicleScope: null,
   emlakFilters: { subtype: '', sortBy: 'page', descending: false },
   emlakExpanded: new Set(),
-  emlakScope: null
+  emlakScope: null,
+  basketFilters: { search: '', kind: '', sortBy: 'lastSeen', descending: true },
+  basketSelected: new Set(),
+  basketExpanded: new Set(),
+  basketShown: 50,
+  clearAsked: false
 };
 
 const QUICK_FACTS = ['Yıl', 'KM', 'Yakıt / Motor Tipi', 'Vites', 'Motor Gücü', 'Renk', 'm² (Brüt)', 'm²', 'Oda Sayısı', 'Bina Yaşı', 'Bulunduğu Kat', 'İmar Durumu'];
@@ -101,7 +106,7 @@ chrome.storage.onChanged.addListener((changes) => {
       ? `İndirme bitti: ${total - errorCount}/${total}${errors}`
       : `İndiriliyor: ${done}/${total}${errors}. Pencereyi kapatsan da devam eder.`;
   }
-  if (changes.basket || changes.vehicleTerms || changes.manualRates) refresh(false);
+  if (changes.basket || changes.vehicleTerms || changes.manualRates || changes.savedSearches) refresh(false);
   if (changes.actionSurface) renderSurfacePicker();
   if (changes.guardedState) refreshGuarded();
 });
@@ -746,59 +751,308 @@ function emlakCard(record, redraw) {
  * BASKET
  * ============================================================================
  */
-async function loadBasket() {
-  const { basket = {}, hiddenColumns = [] } = await chrome.storage.local.get(['basket', 'hiddenColumns']);
-  const records = Object.values(basket).sort((a, b) => (b.lastSeen || '').localeCompare(a.lastSeen || ''));
-  return { records, hiddenColumns };
-}
-
 const openWorkspace = () => chrome.tabs.create({ url: 'dashboard.html' });
 $('openWorkspaceBtn').addEventListener('click', openWorkspace);
-$('basketOpenBtn').addEventListener('click', openWorkspace);
 $('openPanelBtn').addEventListener('click', () => {
   chrome.sidePanel.open({ windowId: app.tab.windowId });
   window.close();
 });
 
+const BASKET_SORTS = {
+  newest: ['lastSeen', true],
+  priceUp: ['price', false],
+  priceDown: ['price', true],
+  unitUp: ['unitPrice', false],
+  date: ['date', true],
+  title: ['title', false]
+};
+
+function basketMessage(text) {
+  $('basketMessage').textContent = text;
+}
+
+function visibleBasket(records) {
+  const { search, kind, sortBy, descending } = app.basketFilters;
+  const matching = filterAndSortRecords(records, { search, sortBy, descending }, {});
+  return kind ? matching.filter((record) => recordKind(record) === kind) : matching;
+}
+
+/** The whole basket, managed from here: find, select, compare, export, remove, clear */
 async function renderBasket() {
-  const { records } = await loadBasket();
-  const withDetail = records.filter((record) => record.hasDetail).length;
+  const { hiddenColumns = [], savedSearches = {} } = await chrome.storage.local.get(['hiddenColumns', 'savedSearches']);
+  const records = Object.values(app.basket);
+  const ids = new Set(records.map((record) => record.id));
+  [...app.basketSelected].forEach((id) => {
+    if (!ids.has(id)) app.basketSelected.delete(id);
+  });
   const count = $('basketCount');
   count.hidden = records.length === 0;
   count.textContent = formatNumber(records.length);
-  $('basketSummary').textContent = records.length === 0 ? 'Sepet boş' : `${formatNumber(records.length)} ilan`;
-  $('basketCaption').textContent = records.length === 0
-    ? 'Gezdiğin sayfaları Sayfa bölümünden ekle.'
-    : `${withDetail} ilanın tüm detayı var`;
-  ['basketCsvBtn', 'basketJsonBtn'].forEach((id) => { $(id).disabled = records.length === 0; });
-  renderStats($('basketStats'), records);
-  $('basketStats').hidden = $('basketStats').childElementCount === 0;
 
-  const list = $('basketList');
-  list.textContent = '';
-  list.hidden = records.length === 0;
-  records.slice(0, 5).forEach((record) => {
-    list.appendChild(el('div', { class: 'basket-row' }, [
-      el('span', { class: 'basket-row-title', text: record.title, title: record.title }),
-      el('span', { class: 'basket-row-price', text: formatPrice(record.price) })
-    ]));
+  const scroll = $('basket-tab').scrollTop;
+  const board = $('basketBoard');
+  const context = await exportContext(app.features, app.ratesResult.rates);
+  if (records.length === 0) {
+    app.clearAsked = false;
+    board.replaceChildren(...stateBlock('Sepet boş', 'Gezdiğin sayfaları Sayfa bölümünden ya da Araç ve Emlak kartlarından ekle.'), savedSearchesFold(savedSearches));
+    return;
+  }
+
+  const withDetail = records.filter((record) => record.hasDetail).length;
+  const summary = el('section', { class: 'card lead' }, [
+    el('div', {}, [
+      el('p', { class: 'lead-figure', text: `${formatNumber(records.length)} ilan` }),
+      el('p', { class: 'lead-caption', text: `${formatNumber(withDetail)} ilanın tüm detayı var` })
+    ]),
+    el('button', {
+      class: 'btn btn-primary btn-large', type: 'button', icon: 'download', text: 'Tüm sepeti CSV indir',
+      onclick: () => {
+        downloadCsv(recordsToRows(records, hiddenColumns, context), `sahibinden_sepet_${todayIso()}.csv`);
+        basketMessage(`${records.length} ilan indirildi.`);
+      }
+    }),
+    el('div', { class: 'btn-row' }, [
+      el('button', { class: 'btn btn-grow', type: 'button', icon: 'open', text: 'Çalışma alanı', onclick: openWorkspace }),
+      el('button', {
+        class: 'btn', type: 'button', icon: 'braces', text: 'JSON',
+        onclick: () => {
+          downloadJson(records, `sahibinden_sepet_${todayIso()}.json`);
+          basketMessage('JSON indirildi.');
+        }
+      })
+    ])
+  ]);
+
+  const statsHolder = el('div');
+  renderStats(statsHolder, records);
+  const rowsHost = el('div', { class: 'row-list' });
+  const selectHost = el('div');
+  const moreHost = el('div', { style: 'margin-top: 8px' });
+  const drawRows = () => {
+    const shown = visibleBasket(records);
+    rowsHost.replaceChildren(...shown.slice(0, app.basketShown).map((record) => basketCard(record, records, drawRows)));
+    if (shown.length === 0) rowsHost.appendChild(el('p', { class: 'small muted', style: 'padding: 12px 0', text: 'Aramana uyan ilan yok.' }));
+    moreHost.replaceChildren(...(shown.length > app.basketShown ? [el('button', {
+      class: 'btn', type: 'button', text: `Daha fazla göster (${formatNumber(shown.length - app.basketShown)} ilan kaldı)`,
+      onclick: () => {
+        app.basketShown += 50;
+        drawRows();
+      }
+    })] : []));
+    selectHost.replaceChildren(selectBar(shown, records, hiddenColumns, context, drawRows));
+  };
+  drawRows();
+
+  const search = el('input', { type: 'search', placeholder: 'Başlık, no, konum, özellik', 'aria-label': 'Sepette ara' });
+  search.value = app.basketFilters.search;
+  search.addEventListener('input', () => {
+    app.basketFilters.search = search.value;
+    app.basketShown = 50;
+    drawRows();
   });
+  const sort = el('select', { 'aria-label': 'Sırala' }, [
+    ['newest', 'Son eklenen'], ['priceUp', 'Fiyat artan'], ['priceDown', 'Fiyat azalan'], ['unitUp', 'Fiyat/m² artan'], ['date', 'İlan tarihi'], ['title', 'Başlık']
+  ].map(([value, text]) => el('option', { value, text })));
+  sort.value = Object.keys(BASKET_SORTS).find((key) => BASKET_SORTS[key][0] === app.basketFilters.sortBy && BASKET_SORTS[key][1] === app.basketFilters.descending) || 'newest';
+  sort.addEventListener('change', () => {
+    [app.basketFilters.sortBy, app.basketFilters.descending] = BASKET_SORTS[sort.value];
+    drawRows();
+  });
+
+  const kinds = [['', 'Tümü', records.length], ['vehicle', 'Araç'], ['emlak', 'Emlak'], ['other', 'Diğer']]
+    .map(([id, label, total]) => [id, label, total === undefined ? records.filter((record) => recordKind(record) === id).length : total])
+    .filter(([id, , total]) => id === '' || total > 0);
+  if (!kinds.some(([id]) => id === app.basketFilters.kind)) app.basketFilters.kind = '';
+  const kindChips = el('div', { class: 'chip-row', role: 'group', 'aria-label': 'İlan türü', style: 'margin-bottom: 8px' }, kinds.map(([id, label, total]) => el('button', {
+    class: 'chip', type: 'button', 'aria-pressed': String(app.basketFilters.kind === id),
+    onclick: () => {
+      app.basketFilters.kind = id;
+      app.basketShown = 50;
+      renderBasket();
+    }
+  }, [el('span', { text: label }), el('span', { class: 'chip-count num', text: formatNumber(total) })])));
+
+  const fold = (title, content) => {
+    const details = el('details', { class: 'fold' }, [el('summary', { text: title }), content]);
+    if (app.openFolds.has(title)) details.open = true;
+    details.addEventListener('toggle', () => {
+      if (details.open) app.openFolds.add(title);
+      else app.openFolds.delete(title);
+    });
+    return el('section', { class: 'card', style: 'padding-top: 4px; padding-bottom: 4px' }, details);
+  };
+
+  board.replaceChildren(...[
+    summary,
+    statsHolder.childElementCount > 0 ? fold('Sepetin özeti', statsHolder) : null,
+    el('section', { class: 'card' }, [
+      el('div', { class: 'list-tools' }, [search, sort]),
+      kindChips,
+      selectHost,
+      rowsHost,
+      moreHost
+    ]),
+    fold('CSV sütunları', renderColumnPicker(records, context, hiddenColumns, app.features, '', () => {})),
+    app.features.backup ? fold('Yedekle ve geri yükle', renderBackupBlock('', basketMessage)) : null,
+    savedSearchesFold(savedSearches),
+    clearBasketBlock(records)
+  ].filter(Boolean));
+  $('basket-tab').scrollTop = scroll;
 }
 
-$('basketCsvBtn').addEventListener('click', async () => {
-  const { records, hiddenColumns } = await loadBasket();
-  if (records.length === 0) return;
-  const context = await exportContext(app.features, app.ratesResult.rates);
-  downloadCsv(recordsToRows(records, hiddenColumns, context), `sahibinden_sepet_${todayIso()}.csv`);
-  $('basketMessage').textContent = `${records.length} ilan indirildi.`;
-});
+function selectBar(shown, records, hiddenColumns, context, redraw) {
+  const chosenShown = shown.filter((record) => app.basketSelected.has(record.id)).length;
+  const box = el('input', { type: 'checkbox', id: 'basketSelectAll' });
+  box.checked = shown.length > 0 && chosenShown === shown.length;
+  box.indeterminate = chosenShown > 0 && chosenShown < shown.length;
+  box.addEventListener('change', () => {
+    shown.forEach((record) => {
+      if (box.checked) app.basketSelected.add(record.id);
+      else app.basketSelected.delete(record.id);
+    });
+    redraw();
+  });
+  const selected = records.filter((record) => app.basketSelected.has(record.id));
+  const count = selected.length;
+  return el('div', { class: 'select-bar' }, [
+    el('label', { class: 'select-all' }, [box, el('span', { text: count > 0 ? `${formatNumber(count)} seçili` : `Tümünü seç (${formatNumber(shown.length)})` })]),
+    count > 0 ? el('div', { class: 'btn-row' }, [
+      el('button', {
+        class: 'btn', type: 'button', icon: 'download', text: 'CSV',
+        onclick: () => {
+          downloadCsv(recordsToRows(selected, hiddenColumns, context), `sahibinden_secilen_${todayIso()}.csv`);
+          basketMessage(`${count} ilan indirildi.`);
+        }
+      }),
+      el('button', {
+        class: 'btn', type: 'button', icon: 'compare', text: 'Karşılaştır', disabled: count < 2,
+        title: count < 2 ? 'En az 2 ilan seç' : '',
+        onclick: () => chrome.tabs.create({ url: `compare.html#${selected.map((record) => record.id).join(',')}` })
+      }),
+      el('button', {
+        class: 'btn btn-danger', type: 'button', icon: 'trash', text: 'Sil',
+        onclick: async () => {
+          await chrome.runtime.sendMessage({ action: 'basket-remove', data: { ids: selected.map((record) => record.id) } });
+          app.basketSelected.clear();
+          basketMessage(`${count} ilan sepetten silindi.`);
+        }
+      })
+    ]) : null
+  ]);
+}
 
-$('basketJsonBtn').addEventListener('click', async () => {
-  const { records } = await loadBasket();
-  if (records.length === 0) return;
-  downloadJson(records, `sahibinden_sepet_${todayIso()}.json`);
-  $('basketMessage').textContent = 'JSON indirildi.';
-});
+function basketCard(record, records, redraw) {
+  const fields = record.fields || {};
+  const kind = recordKind(record);
+  const isOpen = app.basketExpanded.has(record.id);
+  const specs = kind === 'vehicle' ? vehicleSpecs(record) : kind === 'emlak' ? emlakSpecs(record) : [['Konum', recordPlace(record)], ['İlan Tarihi', record.dateRaw]].filter(([, value]) => value);
+  const facts = kind === 'vehicle' ? vehicleFacts(record, Date.now()) : kind === 'emlak' ? emlakFacts(record, Date.now()) : [];
+  const box = el('input', { type: 'checkbox', 'aria-label': `${record.title} seç` });
+  box.checked = app.basketSelected.has(record.id);
+  box.addEventListener('change', () => {
+    if (box.checked) app.basketSelected.add(record.id);
+    else app.basketSelected.delete(record.id);
+    redraw();
+  });
+  const parcel = parcelFromFields(fields);
+  const place = { il: fields['İl'], ilce: fields['İlçe'], mahalle: fields['Mahalle'] };
+  const peers = records.filter(isVehicle);
+  const comparison = kind === 'vehicle' ? vehicleComparison(record, peers) : null;
+  const holder = el('div', { class: 'list-row' }, el('div', { class: 'card-row-main basket-card-main' }, [
+    box,
+    record.image ? el('img', { class: 'card-thumb', src: record.image, alt: '', loading: 'lazy' }) : el('div', { class: 'card-thumb' }),
+    el('div', { style: 'min-width: 0' }, [
+      el('a', { class: 'list-title', href: record.url, target: '_blank', rel: 'noopener', text: record.title, title: record.title }),
+      el('div', { class: 'list-price', text: formatPrice(record.price) }),
+      renderSpecs(specs),
+      kind === 'vehicle' ? el('div', { style: 'margin-top: 4px' }, renderDamageChips(record)) : null
+    ]),
+    expandButton(isOpen, () => {
+      if (isOpen) app.basketExpanded.delete(record.id);
+      else app.basketExpanded.add(record.id);
+      redraw();
+    })
+  ]));
+  if (isOpen) {
+    holder.appendChild(el('div', { class: 'list-row-detail' }, [
+      renderPhotoBlock(record, basketMessage),
+      factsCard('Kesin bilgiler', facts),
+      comparison ? renderPeerComparison(comparison) : null,
+      kind === 'vehicle' ? renderVehicleReport(record, app.terms) : null,
+      app.features.tkgm && parcel && place.il && place.ilce && place.mahalle ? el('button', {
+        class: 'btn', type: 'button', icon: 'map', text: 'Parseli TKGM’de aç',
+        onclick: () => openTkgmParcel(place, parcel, basketMessage)
+      }) : null,
+      renderPhones(record),
+      app.features.notesTags ? el('section', { class: 'card' }, [el('h2', { class: 'card-title', text: 'Notların' }), renderNoteEditor(record.id)]) : null,
+      kind === 'vehicle' ? renderTechnical(record, app.openFolds) : null,
+      el('button', {
+        class: 'btn btn-danger', type: 'button', icon: 'trash', text: 'Sepetten sil',
+        onclick: () => chrome.runtime.sendMessage({ action: 'basket-remove', data: { ids: [record.id] } })
+      })
+    ].filter(Boolean)));
+  }
+  return holder;
+}
+
+function savedSearchesFold(savedSearches) {
+  const entries = Object.entries(savedSearches);
+  if (!app.features.snapshots || entries.length === 0) return el('div', { hidden: true });
+  return el('section', { class: 'card' }, [
+    el('h2', { class: 'card-title', text: 'Kayıtlı aramalar' }),
+    el('div', {}, entries.map(([key, search]) => el('div', { class: 'series-row' }, [
+      el('div', { style: 'min-width: 0' }, [
+        el('a', { href: search.url, target: '_blank', rel: 'noopener', text: (search.category || []).join(' › ') || search.url }),
+        el('div', { class: 'muted', text: `${Object.keys(search.listings).length} ilan${search.lastDiff ? `, ${search.lastDiff.added.length} yeni, ${search.lastDiff.priceChanged.length} fiyatı değişen` : ''}` })
+      ]),
+      el('button', {
+        class: 'btn-link', type: 'button', text: 'Sil',
+        onclick: async () => {
+          const { savedSearches: latest = {} } = await chrome.storage.local.get('savedSearches');
+          delete latest[key];
+          await chrome.storage.local.set({ savedSearches: latest });
+        }
+      })
+    ])))
+  ]);
+}
+
+/** Asks here in the panel: a native dialog can close the small window and lose the answer */
+function clearBasketBlock(records) {
+  const block = el('section', { class: 'card' }, [
+    el('button', {
+      class: 'btn btn-danger', type: 'button', icon: 'trash', text: 'Sepeti temizle',
+      onclick: () => {
+        app.clearAsked = true;
+        renderBasket();
+      }
+    })
+  ]);
+  if (app.clearAsked) {
+    block.appendChild(el('div', { class: 'confirm-box' }, [
+      el('div', { class: 'notice', icon: 'alert' }, el('span', { text: `Sepetteki ${formatNumber(records.length)} ilan bu tarayıcıdan silinir, geri alınamaz. Notların ve kayıtlı aramaların kalır.` })),
+      el('div', { class: 'btn-row' }, [
+        el('button', {
+          class: 'btn btn-primary', type: 'button', text: 'Evet, sepeti temizle',
+          onclick: async () => {
+            app.clearAsked = false;
+            app.basketSelected.clear();
+            await chrome.runtime.sendMessage({ action: 'basket-clear' });
+            basketMessage('Sepet temizlendi.');
+          }
+        }),
+        el('button', {
+          class: 'btn', type: 'button', text: 'Vazgeç',
+          onclick: () => {
+            app.clearAsked = false;
+            renderBasket();
+          }
+        })
+      ])
+    ]));
+  }
+  return block;
+}
 
 /**
  * ============================================================================

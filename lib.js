@@ -172,7 +172,7 @@ function basketColumns(records, context) {
   const on = (context && context.features) || {};
   const rates = on.liveRates || on.manualRates ? context.rates : null;
   const notes = (context && context.annotations) || {};
-  const derived = on.computedFields || on.dealScore ? basketContext(records, context.now) : null;
+  const derived = on.computedFields ? basketContext(records, context.now) : null;
   const fieldNames = [];
   const featureGroups = [];
   records.forEach((record) => {
@@ -187,6 +187,8 @@ function basketColumns(records, context) {
   const lastChange = (record) => (record.priceHistory || []).slice(-1)[0];
   const columns = [
     ['İlan No', (r) => r.id],
+    ['İlan Linki', (r) => r.url],
+    ['İlan Fotoğraf Linki', (r) => recordPhoto(r)],
     ['Başlık', (r) => r.title],
     ['Fiyat', (r) => (r.price && r.price.amount !== null ? r.price.amount : r.price && r.price.raw)],
     ['Para Birimi', (r) => r.price && r.price.currency],
@@ -203,7 +205,6 @@ function basketColumns(records, context) {
       columns.push([`Fiyat (${label})`, (r) => (convertPrice(r.price, rates) || {})[code]]);
     });
   }
-  if (on.dealScore) columns.push(['Fırsat Puanı', (r) => dealScore(r, derived, context.scoreWeights)]);
   if (on.notesTags) {
     columns.push(
       ['Puanım', (r) => (notes[r.id] || {}).rating],
@@ -283,8 +284,6 @@ function basketColumns(records, context) {
     ['Öne Çıkan', (r) => (r.promoted ? 'Evet' : '')],
     ['Acil', (r) => (r.urgent ? 'Evet' : '')],
     ['Detay Alındı', (r) => (r.hasDetail ? 'Evet' : 'Hayır')],
-    ['Resim', (r) => r.image],
-    ['İlan Linki', (r) => r.url],
     ['İlk Görülme', (r) => r.firstSeen],
     ['Son Görülme', (r) => r.lastSeen]
   );
@@ -310,7 +309,7 @@ function listPageToRows(page, context) {
   const names = page.columns.filter((name) => name !== 'Resim');
   const records = page.rows.map((row) => listRowToRecord(row, page));
   const showUnitPrice = !names.includes('m² Fiyatı') && records.some((record) => unitPrice(record) !== null);
-  const header = ['Resim', ...names, 'İlan Linki', 'İlan No', 'Para Birimi', 'İlan Tarihi (ISO)', 'Öne Çıkan', 'Acil'];
+  const header = ['İlan Fotoğraf Linki', ...names, 'İlan Linki', 'İlan No', 'Para Birimi', 'İlan Tarihi (ISO)', 'Öne Çıkan', 'Acil'];
   if (showUnitPrice) header.push('Hesaplanan Fiyat/m²');
   if (rates) RATE_UNITS.forEach(({ label }) => header.push(`Fiyat (${label})`));
   if (on.extraData) header.push('Mağaza', 'Rozetler');
@@ -321,7 +320,7 @@ function listPageToRows(page, context) {
       byName[cell.name] = cell.kind === 'attribute' ? normalizeNumberText(cell.value) : cell.value;
     });
     const values = [
-      row.image,
+      largePhotoUrl(row.image),
       ...names.map((name) => (byName[name] === undefined ? '' : byName[name])),
       row.url,
       row.id,
@@ -1010,6 +1009,12 @@ function emlakCategoryLink(subtype, pageUrl) {
   return `https://www.sahibinden.com/${subtype.slug}${city ? `/${city}` : ''}`;
 }
 
+/** Which of the extension's big groups a saved listing belongs to */
+function recordKind(record) {
+  if (isVehicle(record)) return 'vehicle';
+  return isRealEstate(record) ? 'emlak' : 'other';
+}
+
 /** The saved copy of a listing, updated with what the open page shows now */
 function withSaved(record, saved) {
   if (!saved) return record;
@@ -1149,9 +1154,9 @@ function toTsv(rows) {
 
 /** Each preset names the columns to keep. Everything else is hidden, so it can't lose data. */
 const COLUMN_PRESETS = {
-  emlak: { label: 'Emlak', keep: ['İlan No', 'Başlık', 'Fiyat', 'Para Birimi', 'Hesaplanan Fiyat/m²', 'Konum', 'm² (Brüt)', 'm² (Net)', 'Oda Sayısı', 'Bina Yaşı', 'Bulunduğu Kat', 'Kat Sayısı', 'Isıtma', 'Aidat (TL)', 'Site Adı', 'Kimden', 'İlan Tarihi (ISO)', 'İlan Linki'] },
-  arsa: { label: 'Arsa', keep: ['İlan No', 'Başlık', 'Fiyat', 'Para Birimi', 'm²', 'm² Fiyatı', 'Konum', 'İmar Durumu', 'Ada No', 'Parsel No', 'Kaks (Emsal)', 'Gabari', 'Tapu Durumu', 'Kimden', 'İlan Tarihi (ISO)', 'İlan Linki'] },
-  vasita: { label: 'Vasıta', keep: ['İlan No', 'Başlık', 'Fiyat', 'Para Birimi', 'Marka', 'Seri', 'Model', 'Yıl', 'KM', 'Yakıt / Motor Tipi', 'Vites', 'Kasa Tipi', 'Renk', 'Ağır Hasar Kayıtlı', 'Motor Gücü', 'Motor Hacmi', 'Çekiş', 'Değişen Parçalar', 'Boyalı Parçalar', 'Lokal Boyalı Parçalar', 'Hasar Notları', 'Değişen Parça Sayısı', 'Boyalı Parça Sayısı', 'Yıllık KM', 'Açıklamada Tramer', 'Açıklama: Şase, podye, direk', 'Açıklama: Airbag', 'Açıklama: KM', 'Açıklama: Tramer ve hasar kaydı', 'Açıklama: Muayene', 'Açıklamadaki Telefon', 'Konum', 'Kimden', 'İlan Tarihi (ISO)', 'İlan Linki'] }
+  emlak: { label: 'Emlak', keep: ['İlan No', 'İlan Linki', 'İlan Fotoğraf Linki', 'Başlık', 'Fiyat', 'Para Birimi', 'Hesaplanan Fiyat/m²', 'Konum', 'm² (Brüt)', 'm² (Net)', 'Oda Sayısı', 'Bina Yaşı', 'Bulunduğu Kat', 'Kat Sayısı', 'Isıtma', 'Aidat (TL)', 'Site Adı', 'Kimden', 'İlan Tarihi (ISO)'] },
+  arsa: { label: 'Arsa', keep: ['İlan No', 'İlan Linki', 'İlan Fotoğraf Linki', 'Başlık', 'Fiyat', 'Para Birimi', 'm²', 'm² Fiyatı', 'Konum', 'İmar Durumu', 'Ada No', 'Parsel No', 'Kaks (Emsal)', 'Gabari', 'Tapu Durumu', 'Kimden', 'İlan Tarihi (ISO)'] },
+  vasita: { label: 'Vasıta', keep: ['İlan No', 'İlan Linki', 'İlan Fotoğraf Linki', 'Başlık', 'Fiyat', 'Para Birimi', 'Marka', 'Seri', 'Model', 'Yıl', 'KM', 'Yakıt / Motor Tipi', 'Vites', 'Kasa Tipi', 'Renk', 'Ağır Hasar Kayıtlı', 'Motor Gücü', 'Motor Hacmi', 'Çekiş', 'Değişen Parçalar', 'Boyalı Parçalar', 'Lokal Boyalı Parçalar', 'Hasar Notları', 'Değişen Parça Sayısı', 'Boyalı Parça Sayısı', 'Yıllık KM', 'Açıklamada Tramer', 'Açıklama: Şase, podye, direk', 'Açıklama: Airbag', 'Açıklama: KM', 'Açıklama: Tramer ve hasar kaydı', 'Açıklama: Muayene', 'Açıklamadaki Telefon', 'Konum', 'Kimden', 'İlan Tarihi (ISO)'] }
 };
 
 function hiddenColumnsForPreset(presetId, allNames) {
@@ -1398,6 +1403,7 @@ if (typeof module !== 'undefined') {
     emlakCounts,
     emlakCategoryLink,
     withSaved,
+    recordKind,
     flatTechnical,
     parseDescription,
     computedFields,
